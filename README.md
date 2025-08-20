@@ -1,4 +1,7 @@
-# 🎓 AI-Powered Student Learning App
+# Still Working on This Project...
+### With love for AP students ❤️
+
+## 🎓 AI-Powered Student Learning App For AP STATE Students
 
 An intelligent learning platform designed specifically for AP State Board Syllabus (Classes 1-10) using advanced AI technology.
 
