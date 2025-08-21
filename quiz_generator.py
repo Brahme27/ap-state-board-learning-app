@@ -1,6 +1,7 @@
 """
 Quiz Generator Module
 Generates adaptive and final quizzes using AI
+Enhanced with continuous adaptive questioning
 """
 
 from langchain_openai import ChatOpenAI
@@ -20,49 +21,70 @@ class QuizGenerator:
             max_tokens=2000
         )
     
-    def generate_adaptive_quiz(self, topic: str, subject: str, class_level: str, 
-                             difficulty: str = "easy", num_questions: int = 3) -> List[Dict]:
-        """Generate adaptive quiz questions based on difficulty level"""
+    def generate_next_adaptive_question(self, topic: str, subject: str, class_level: str, 
+                                      difficulty: str = "easy", previous_wrong_answer: str = None,
+                                      question_history: List[str] = None) -> Dict:
+        """Generate the next adaptive question based on performance"""
+        
+        # Ensure question_history is a list
+        if question_history is None:
+            question_history = []
         
         system_prompt = f"""
-        You are an expert quiz creator for {class_level} students studying {subject}.
-        Create {num_questions} multiple-choice questions about "{topic}" with {difficulty} difficulty level.
+        You are an expert adaptive quiz creator for {class_level} students studying {subject}.
+        Create 1 multiple-choice question about "{topic}" with {difficulty} difficulty level.
+        
+        IMPORTANT ADAPTIVE RULES:
+        - If student got previous question wrong, create a RELATED but DIFFERENT question on the same concept
+        - If student is doing well, gradually increase difficulty
+        - Focus on the specific area where student struggled
+        - Never repeat the exact same question
         
         Difficulty Guidelines:
         - Easy: Basic recall and understanding questions
         - Medium: Application and analysis questions  
         - Hard: Synthesis and evaluation questions
         
-        Format your response as a valid JSON array with this exact structure:
-        [
-            {{
-                "question": "Question text here?",
-                "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
-                "correct_answer": "A) Option 1",
-                "explanation": "Brief explanation of why this is correct"
-            }}
-        ]
+        Format your response as a valid JSON object with this exact structure:
+        {{
+            "question": "Question text here?",
+            "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
+            "correct_answer": "A) Option 1",
+            "explanation": "Brief explanation of why this is correct and how it relates to the concept",
+            "concept_focus": "The specific concept this question tests",
+            "difficulty": "{difficulty}"
+        }}
         
         Requirements:
         1. Questions must be appropriate for {class_level} students
         2. Use clear, simple language
-        3. Avoid trick questions
-        4. Make sure only one option is clearly correct
-        5. Include realistic distractors
-        6. Questions should test understanding, not just memorization
+        3. Make sure only one option is clearly correct
+        4. Include realistic distractors
+        5. If previous answer was wrong, focus on that concept area
+        6. Never repeat questions from history
         """
         
         human_prompt = f"""
-        Create {num_questions} {difficulty} difficulty multiple-choice questions about "{topic}" for {class_level} students studying {subject}.
+        Create 1 {difficulty} difficulty adaptive question about "{topic}" for {class_level} students studying {subject}.
         
-        Topic: {topic}
-        Subject: {subject}
-        Class Level: {class_level}
-        Difficulty: {difficulty}
-        Number of Questions: {num_questions}
-        
-        Return only the JSON array, no additional text.
+        Context:
+        - Topic: {topic}
+        - Subject: {subject}
+        - Class Level: {class_level}
+        - Current Difficulty: {difficulty}
         """
+        
+        # Add context about previous wrong answer
+        if previous_wrong_answer:
+            human_prompt += f"\n- Previous Wrong Answer: The student struggled with: {previous_wrong_answer}"
+            human_prompt += "\n- Focus on the same concept but ask it differently to reinforce learning"
+        
+        # Add question history to avoid repeats
+        if question_history:
+            human_prompt += f"\n- Previous Questions Asked: {', '.join(question_history[-5:])}"  # Last 5 questions
+            human_prompt += "\n- Make sure this question is different from previous ones"
+        
+        human_prompt += "\n\nReturn only the JSON object, no additional text."
         
         try:
             messages = [
@@ -74,15 +96,108 @@ class QuizGenerator:
             
             # Try to parse JSON response
             try:
-                questions = json.loads(response.content)
-                return questions
+                question_data = json.loads(response.content)
+                # Validate required fields
+                if self._validate_question_data(question_data):
+                    return question_data
+                else:
+                    return self._create_fallback_adaptive_question(topic, subject, class_level, difficulty)
             except json.JSONDecodeError:
-                # If JSON parsing fails, create fallback questions
-                return self._create_fallback_questions(topic, subject, class_level, difficulty, num_questions)
+                return self._create_fallback_adaptive_question(topic, subject, class_level, difficulty)
                 
         except Exception as e:
-            print(f"Error generating quiz: {e}")
-            return self._create_fallback_questions(topic, subject, class_level, difficulty, num_questions)
+            print(f"Error generating adaptive question: {e}")
+            return self._create_fallback_adaptive_question(topic, subject, class_level, difficulty)
+    
+    def _validate_question_data(self, question_data: Dict) -> bool:
+        """Validate question data structure"""
+        required_fields = ['question', 'options', 'correct_answer', 'explanation']
+        
+        if not all(field in question_data for field in required_fields):
+            return False
+        
+        if not isinstance(question_data['options'], list) or len(question_data['options']) != 4:
+            return False
+        
+        if question_data['correct_answer'] not in question_data['options']:
+            return False
+        
+        return True
+    
+    def _create_fallback_adaptive_question(self, topic: str, subject: str, class_level: str, difficulty: str) -> Dict:
+        """Create fallback question when AI generation fails"""
+        
+        question_templates = {
+            "Mathematics": {
+                "easy": f"What is a basic concept in {topic}?",
+                "medium": f"How do you apply {topic} in problem solving?",
+                "hard": f"What is an advanced application of {topic}?"
+            },
+            "Science": {
+                "easy": f"What is {topic}?",
+                "medium": f"How does {topic} work in nature?", 
+                "hard": f"What are the complex aspects of {topic}?"
+            },
+            "Environmental Studies": {
+                "easy": f"What do we learn about {topic}?",
+                "medium": f"How does {topic} affect our environment?",
+                "hard": f"What are the broader implications of {topic}?"
+            }
+        }
+        
+        # Get template based on subject and difficulty
+        templates = question_templates.get(subject, question_templates["Science"])
+        question_text = templates.get(difficulty, templates["easy"])
+        
+        return {
+            "question": question_text,
+            "options": [
+                f"A) Basic concept of {topic}",
+                f"B) Advanced concept of {topic}",
+                f"C) Related concept to {topic}",
+                f"D) All concepts are important"
+            ],
+            "correct_answer": f"A) Basic concept of {topic}",
+            "explanation": f"This relates to understanding the fundamental concepts of {topic}.",
+            "concept_focus": f"Basic understanding of {topic}",
+            "difficulty": difficulty
+        }
+    
+    def determine_next_difficulty(self, current_difficulty: str, is_correct: bool, consecutive_correct: int, consecutive_wrong: int) -> str:
+        """Determine next question difficulty based on performance"""
+        
+        if consecutive_wrong >= 2:
+            # If student got 2+ wrong in a row, make it easier or stay same level
+            if current_difficulty == "hard":
+                return "medium"
+            elif current_difficulty == "medium":
+                return "easy"
+            else:
+                return "easy"  # Stay at easy level
+        
+        elif consecutive_correct >= 2:
+            # If student got 2+ correct in a row, increase difficulty
+            if current_difficulty == "easy":
+                return "medium"
+            elif current_difficulty == "medium":
+                return "hard"
+            else:
+                return "hard"  # Stay at hard level
+        
+        else:
+            # Keep current difficulty if performance is mixed
+            return current_difficulty
+    
+    def generate_adaptive_quiz(self, topic: str, subject: str, class_level: str, 
+                             difficulty: str = "easy", num_questions: int = 3) -> List[Dict]:
+        """Generate adaptive quiz questions based on difficulty level (Legacy method for compatibility)"""
+        
+        questions = []
+        for i in range(num_questions):
+            question = self.generate_next_adaptive_question(topic, subject, class_level, difficulty)
+            questions.append(question)
+        
+        return questions
     
     def generate_final_quiz(self, topic: str, subject: str, class_level: str) -> List[Dict]:
         """Generate a comprehensive 10-question final quiz"""
