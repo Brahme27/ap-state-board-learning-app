@@ -1,6 +1,7 @@
 """
 AI-Powered Student Learning App
 Designed for AP State Board Syllabus (Classes 1-10)
+Updated with Continuous Adaptive Quiz System
 """
 
 import streamlit as st
@@ -51,6 +52,45 @@ def initialize_session_state():
         st.session_state.current_question_index = 0
     if 'student_history' not in st.session_state:
         st.session_state.student_history = StudentHistory()
+    
+    # Additional session state for quiz functionality
+    if 'continuous_quiz_active' not in st.session_state:
+        st.session_state.continuous_quiz_active = False
+    if 'continuous_quiz_difficulty' not in st.session_state:
+        st.session_state.continuous_quiz_difficulty = "easy"
+    if 'continuous_quiz_stats' not in st.session_state:
+        st.session_state.continuous_quiz_stats = {
+            'total_questions': 0,
+            'correct_answers': 0,
+            'consecutive_correct': 0,
+            'consecutive_wrong': 0,
+            'question_history': [],
+            'last_wrong_concept': None
+        }
+    if 'current_adaptive_question' not in st.session_state:
+        st.session_state.current_adaptive_question = None
+    if 'show_feedback' not in st.session_state:
+        st.session_state.show_feedback = False
+    if 'last_answer_correct' not in st.session_state:
+        st.session_state.last_answer_correct = None
+    if 'last_question' not in st.session_state:
+        st.session_state.last_question = None
+    if 'last_selected_answer' not in st.session_state:
+        st.session_state.last_selected_answer = None
+    
+    # Final quiz session state
+    if 'final_quiz_active' not in st.session_state:
+        st.session_state.final_quiz_active = False
+    if 'final_quiz_questions' not in st.session_state:
+        st.session_state.final_quiz_questions = []
+    if 'final_quiz_answers' not in st.session_state:
+        st.session_state.final_quiz_answers = {}
+    if 'final_quiz_submitted' not in st.session_state:
+        st.session_state.final_quiz_submitted = False
+    if 'final_quiz_score' not in st.session_state:
+        st.session_state.final_quiz_score = 0
+    if 'final_quiz_detailed_results' not in st.session_state:
+        st.session_state.final_quiz_detailed_results = []
 
 def authentication_page():
     """Authentication page for API key and student details"""
@@ -160,6 +200,19 @@ def topic_selection_page():
             st.session_state.current_page = "learning_hub"
             # Reset chat history for new topic
             st.session_state.chat_history = []
+            # Reset continuous quiz state for new topic
+            if 'continuous_quiz_active' in st.session_state:
+                st.session_state.continuous_quiz_active = False
+                st.session_state.continuous_quiz_stats = {
+                    'total_questions': 0,
+                    'correct_answers': 0,
+                    'consecutive_correct': 0,
+                    'consecutive_wrong': 0,
+                    'question_history': [],
+                    'last_wrong_concept': None
+                }
+                st.session_state.current_adaptive_question = None
+                st.session_state.show_feedback = False
             st.rerun()
     
     if st.button("⬅️ Back to Chapter Selection"):
@@ -185,6 +238,9 @@ def learning_hub_page():
         if st.button("🏠 Back to Topics"):
             st.session_state.current_page = "topic_selection"
             st.session_state.selected_topic = None
+            # Reset quiz states when leaving topic
+            if 'continuous_quiz_active' in st.session_state:
+                st.session_state.continuous_quiz_active = False
             st.rerun()
     
     # Main content area
@@ -262,304 +318,801 @@ def interactive_qa_section():
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
 
 def video_learning_section():
-    """Video learning section"""
+    """Video learning section - Shows SINGLE most relevant video"""
     st.subheader("🎥 Video Learning")
-    st.markdown("Watch curated educational videos to reinforce your learning!")
+    st.markdown("Get the **most relevant educational video** for your current topic!")
     
-    if st.button("🔍 Find Educational Videos", type="primary"):
-        with st.spinner("🎬 Searching for the best educational videos..."):
-            video_recommender = VideoRecommender()
-            
-            videos = video_recommender.search_educational_videos(
-                topic=st.session_state.selected_topic,
-                subject=st.session_state.selected_subject,
-                class_level=st.session_state.selected_class
-            )
-            
-            if videos:
-                st.markdown("### 📺 Recommended Videos")
+    # Show current topic context
+    st.info(f"📚 **Current Topic:** {st.session_state.selected_topic} ({st.session_state.selected_subject})")
+    
+    # Single button to find the best video
+    if st.button("🎯 Find Best Educational Video", type="primary", use_container_width=True):
+        with st.spinner("🔍 Finding the most relevant educational video for you..."):
+            try:
+                video_recommender = VideoRecommender()
                 
-                for i, video in enumerate(videos[:3]):  # Show top 3 videos
-                    with st.container():
-                        col1, col2 = st.columns([1, 2])
-                        
-                        with col1:
-                            st.image(video.get('thumbnail', ''), width=200)
-                        
-                        with col2:
-                            st.markdown(f"**{video['title']}**")
-                            st.markdown(f"Duration: {video.get('duration', 'N/A')}")
-                            st.markdown(f"Channel: {video.get('channel', 'N/A')}")
-                            
-                            if st.button(f"▶️ Watch Video {i+1}", key=f"video_{i}"):
-                                st.markdown(f"[🔗 Open Video]({video['url']})")
-                        
-                        st.markdown("---")
-            else:
-                st.warning("😔 No videos found. Try a different topic or check your internet connection.")
-
-def mini_quiz_section():
-    """Adaptive mini quiz section"""
-    st.subheader("🧩 Mini Quiz (Adaptive)")
-    st.markdown("Test your understanding with adaptive difficulty!")
-    
-    if 'mini_quiz_started' not in st.session_state:
-        st.session_state.mini_quiz_started = False
-        st.session_state.mini_quiz_score = 0
-        st.session_state.mini_quiz_difficulty = "easy"
-        st.session_state.mini_quiz_questions = []
-        st.session_state.mini_quiz_current = 0
-    
-    if not st.session_state.mini_quiz_started:
-        if st.button("🚀 Start Mini Quiz", type="primary"):
-            st.session_state.mini_quiz_started = True
-            st.rerun()
-    else:
-        conduct_mini_quiz()
-
-def conduct_mini_quiz():
-    """Conduct the adaptive mini quiz"""
-    quiz_generator = QuizGenerator(st.session_state.api_key)
-    
-    # Generate questions if not already generated
-    if not st.session_state.mini_quiz_questions:
-        with st.spinner(f"🎯 Generating {st.session_state.mini_quiz_difficulty} questions..."):
-            questions = quiz_generator.generate_adaptive_quiz(
-                topic=st.session_state.selected_topic,
-                subject=st.session_state.selected_subject,
-                class_level=st.session_state.selected_class,
-                difficulty=st.session_state.mini_quiz_difficulty,
-                num_questions=3
-            )
-            st.session_state.mini_quiz_questions = questions
-    
-    # Display current question
-    if st.session_state.mini_quiz_current < len(st.session_state.mini_quiz_questions):
-        current_q = st.session_state.mini_quiz_questions[st.session_state.mini_quiz_current]
-        
-        st.markdown(f"**Question {st.session_state.mini_quiz_current + 1}/3** ({st.session_state.mini_quiz_difficulty.title()})")
-        st.markdown(f"**{current_q['question']}**")
-        
-        # Answer options
-        selected_answer = st.radio("Select your answer:", current_q['options'], key=f"mini_q_{st.session_state.mini_quiz_current}")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("✅ Submit Answer"):
-                if selected_answer == current_q['correct_answer']:
-                    st.success("🎉 Correct!")
-                    st.session_state.mini_quiz_score += 1
-                else:
-                    st.error(f"❌ Incorrect. The correct answer is: {current_q['correct_answer']}")
-                
-                st.session_state.mini_quiz_current += 1
-                
-                # Check if we need to adjust difficulty
-                if st.session_state.mini_quiz_current == 3:
-                    if st.session_state.mini_quiz_score >= 2:  # Good performance
-                        if st.session_state.mini_quiz_difficulty == "easy":
-                            st.session_state.mini_quiz_difficulty = "medium"
-                            st.session_state.mini_quiz_questions = []
-                            st.session_state.mini_quiz_current = 0
-                            st.info("🎯 Great job! Moving to medium difficulty...")
-                        elif st.session_state.mini_quiz_difficulty == "medium":
-                            st.session_state.mini_quiz_difficulty = "hard"
-                            st.session_state.mini_quiz_questions = []
-                            st.session_state.mini_quiz_current = 0
-                            st.info("🔥 Excellent! Moving to hard difficulty...")
-                        else:
-                            st.success("🏆 Outstanding! You've mastered this topic!")
-                            st.session_state.mini_quiz_started = False
-                    else:
-                        st.info("📚 Keep practicing! You can try again.")
-                        st.session_state.mini_quiz_started = False
-                
-                st.rerun()
-        
-        with col2:
-            if st.button("🔄 Restart Quiz"):
-                st.session_state.mini_quiz_started = False
-                st.session_state.mini_quiz_questions = []
-                st.rerun()
-
-def final_quiz_section():
-    """Final quiz section"""
-    st.subheader("📝 Final Quiz")
-    st.markdown("Take a comprehensive 10-question quiz to test your mastery!")
-    
-    if 'final_quiz_started' not in st.session_state:
-        st.session_state.final_quiz_started = False
-        st.session_state.final_quiz_questions = []
-        st.session_state.final_quiz_current = 0
-        st.session_state.final_quiz_score = 0
-        st.session_state.final_quiz_answers = []
-    
-    if not st.session_state.final_quiz_started:
-        if st.button("🎯 Start Final Quiz", type="primary"):
-            with st.spinner("📝 Generating 10 unique questions..."):
-                quiz_generator = QuizGenerator(st.session_state.api_key)
-                
-                questions = quiz_generator.generate_final_quiz(
+                # Get the single best video
+                best_video = video_recommender.get_best_educational_video(
                     topic=st.session_state.selected_topic,
                     subject=st.session_state.selected_subject,
                     class_level=st.session_state.selected_class
                 )
                 
-                st.session_state.final_quiz_questions = questions
-                st.session_state.final_quiz_started = True
+                if best_video:
+                    st.session_state['best_video'] = best_video
+                    st.success("✅ Found the perfect educational video for you!")
+                    st.rerun()
+                else:
+                    st.error("❌ Could not find educational video. Please check your internet connection.")
+                    
+            except Exception as e:
+                st.error(f"⚠️ Error finding video: {str(e)}")
+                
+                # Create manual fallback
+                topic = st.session_state.selected_topic
+                subject = st.session_state.selected_subject
+                search_query = f"{topic} {subject} tutorial explanation"
+                search_url = f"https://www.youtube.com/results?search_query={search_query.replace(' ', '+')}"
+                
+                fallback_video = {
+                    'title': f"{topic} - {subject} Educational Tutorial",
+                    'url': search_url,
+                    'duration': "Educational Content",
+                    'views': "Find Best Match",
+                    'channel': "YouTube Search",
+                    'thumbnail': '',
+                    'description': f"Search for the best educational videos about {topic} in {subject}"
+                }
+                
+                st.session_state['best_video'] = fallback_video
+                st.info("🔄 Created targeted video search for you!")
                 st.rerun()
+    
+    # Display the best video if found
+    if 'best_video' in st.session_state and st.session_state['best_video']:
+        video = st.session_state['best_video']
+        
+        st.markdown("---")
+        st.markdown("### 🏆 **Most Relevant Educational Video**")
+        
+        # Create attractive video display
+        with st.container():
+            # Video thumbnail and details
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                if video.get('thumbnail') and video['thumbnail'].startswith('http'):
+                    try:
+                        st.image(video['thumbnail'], width=200)
+                    except:
+                        st.markdown("🎥", help="Educational Video")
+                else:
+                    # Create a nice video placeholder
+                    st.markdown("""
+                    <div style='background: linear-gradient(45deg, #FF6B6B, #4ECDC4); 
+                                height: 150px; width: 200px; border-radius: 10px; 
+                                display: flex; align-items: center; justify-content: center; 
+                                color: white; font-size: 30px; margin: 10px 0;'>
+                        🎥
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"#### 📹 {video['title']}")
+                st.markdown(f"**📺 Channel:** {video.get('channel', 'Educational')}")
+                st.markdown(f"**⏱️ Duration:** {video.get('duration', 'Educational Content')}")
+                st.markdown(f"**👀 Views:** {video.get('views', 'Educational')}")
+                
+                if video.get('description'):
+                    st.markdown(f"**📄 About:** {video['description'][:100]}...")
+        
+        # Big prominent watch button
+        st.markdown("---")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col2:
+            if st.button("▶️ **WATCH THIS VIDEO**", type="primary", use_container_width=True):
+                # Record video view in history
+                st.session_state.student_history.add_video_view(
+                    st.session_state.selected_topic,
+                    video['title'],
+                    video['url']
+                )
+                
+                # Show video link prominently
+                st.success("🔗 **Click the link below to watch the video:**")
+                st.markdown(f"""
+                <div style='background-color: #e1f5fe; padding: 20px; border-radius: 10px; text-align: center; margin: 10px 0;'>
+                    <h3>🎥 Ready to Watch!</h3>
+                    <a href='{video['url']}' target='_blank' style='background-color: #ff4444; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 18px;'>
+                        ▶️ OPEN VIDEO IN YOUTUBE
+                    </a>
+                    <p style='margin-top: 15px; color: #666;'>Click the red button above to open the video in a new tab</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Also show as regular link for backup
+                st.markdown(f"**Backup Link:** [🎥 {video['title']}]({video['url']})")
+        
+        # Clear video button
+        st.markdown("---")
+        if st.button("🗑️ Find Different Video"):
+            if 'best_video' in st.session_state:
+                del st.session_state['best_video']
+            st.rerun()
+    
     else:
-        conduct_final_quiz()
+        # Show helpful guidance when no video is selected
+        st.markdown("### 🎯 **How Video Learning Works**")
+        
+        with st.container():
+            st.markdown("""
+            1. **🔍 Smart Search** - AI finds the most relevant educational video for your topic
+            2. **🏆 Best Match** - Only shows you the highest quality educational content  
+            3. **▶️ Direct Access** - Click to watch the video on YouTube
+            4. **📊 Progress Tracking** - Your video views are recorded in your learning history
+            """)
+        
+        # Show what topic will be searched
+        st.markdown("---")
+        st.markdown("### 🎬 **Ready to Find Video For:**")
+        
+        info_col1, info_col2 = st.columns(2)
+        with info_col1:
+            st.info(f"**📖 Topic:** {st.session_state.selected_topic}")
+        with info_col2:
+            st.info(f"**📚 Subject:** {st.session_state.selected_subject}")
+        
+        st.markdown("**Click the button above to find your perfect educational video!** 🚀")
 
-def conduct_final_quiz():
-    """Conduct the final quiz"""
-    if st.session_state.final_quiz_current < len(st.session_state.final_quiz_questions):
-        current_q = st.session_state.final_quiz_questions[st.session_state.final_quiz_current]
-        
-        st.markdown(f"**Question {st.session_state.final_quiz_current + 1}/10**")
-        st.markdown(f"**{current_q['question']}**")
-        
-        selected_answer = st.radio("Select your answer:", current_q['options'], 
-                                 key=f"final_q_{st.session_state.final_quiz_current}")
-        
-        col1, col2 = st.columns(2)
+def mini_quiz_section():
+    """Continuous Adaptive Mini Quiz section"""
+    st.subheader("🧩 Mini Quiz (Continuous Adaptive)")
+    st.markdown("**Keep practicing until you feel confident!** The AI will adapt questions based on your performance.")
+    
+    # Initialize session state for continuous quiz
+    if 'continuous_quiz_active' not in st.session_state:
+        st.session_state.continuous_quiz_active = False
+        st.session_state.continuous_quiz_difficulty = "easy"
+        st.session_state.continuous_quiz_stats = {
+            'total_questions': 0,
+            'correct_answers': 0,
+            'consecutive_correct': 0,
+            'consecutive_wrong': 0,
+            'question_history': [],
+            'last_wrong_concept': None
+        }
+        st.session_state.current_adaptive_question = None
+        st.session_state.show_feedback = False
+        st.session_state.last_answer_correct = None
+        st.session_state.last_question = None
+        st.session_state.last_selected_answer = None
+    
+    # Display current stats
+    if st.session_state.continuous_quiz_active:
+        stats = st.session_state.continuous_quiz_stats
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            if st.button("➡️ Next Question"):
-                is_correct = selected_answer == current_q['correct_answer']
-                
-                st.session_state.final_quiz_answers.append({
-                    'question': current_q['question'],
-                    'selected': selected_answer,
-                    'correct': current_q['correct_answer'],
-                    'is_correct': is_correct
-                })
-                
-                if is_correct:
-                    st.session_state.final_quiz_score += 1
-                
-                st.session_state.final_quiz_current += 1
+            st.metric("Questions Answered", stats['total_questions'])
+        with col2:
+            accuracy = (stats['correct_answers'] / max(stats['total_questions'], 1)) * 100
+            st.metric("Accuracy", f"{accuracy:.1f}%")
+        with col3:
+            st.metric("Current Level", st.session_state.continuous_quiz_difficulty.title())
+        with col4:
+            st.metric("Streak", f"✅{stats['consecutive_correct']} / ❌{stats['consecutive_wrong']}")
+    
+    # Start/Continue Quiz Section
+    if not st.session_state.continuous_quiz_active:
+        # Quiz start section
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            if st.button("🚀 Start Continuous Quiz", type="primary", use_container_width=True):
+                st.session_state.continuous_quiz_active = True
+                st.session_state.show_feedback = False
                 st.rerun()
         
         with col2:
-            if st.button("🔄 Restart Quiz"):
-                st.session_state.final_quiz_started = False
-                st.session_state.final_quiz_questions = []
-                st.session_state.final_quiz_current = 0
-                st.session_state.final_quiz_score = 0
-                st.session_state.final_quiz_answers = []
-                st.rerun()
-    
+            st.markdown("**📚 How it works:**")
+            st.markdown("• Answer questions continuously")
+            st.markdown("• Get instant feedback")
+            st.markdown("• Questions adapt to your level")
+            st.markdown("• Move to Final Quiz when ready")
+        
     else:
-        # Quiz completed - show results
-        show_final_quiz_results()
+        # Active quiz section
+        conduct_continuous_adaptive_quiz()
 
-def show_final_quiz_results():
-    """Show final quiz results"""
-    score_percentage = (st.session_state.final_quiz_score / 10) * 100
+def conduct_continuous_adaptive_quiz():
+    """Conduct the continuous adaptive quiz"""
     
-    st.markdown("## 🎊 Quiz Completed!")
-    st.markdown(f"### Your Score: {st.session_state.final_quiz_score}/10 ({score_percentage:.1f}%)")
+    # Generate new question if needed
+    if st.session_state.current_adaptive_question is None and not st.session_state.show_feedback:
+        generate_next_adaptive_question()
     
-    # Performance feedback
-    if score_percentage >= 80:
-        st.success("🏆 Excellent! You have mastered this topic!")
-    elif score_percentage >= 60:
-        st.info("👍 Good job! Keep practicing to improve further.")
-    else:
-        st.warning("📚 Keep studying! Review the topic and try again.")
+    # Show feedback if answer was just submitted
+    if st.session_state.show_feedback:
+        display_answer_feedback()
     
-    # Record quiz result
-    st.session_state.student_history.add_quiz_result(
-        st.session_state.selected_class,
-        st.session_state.selected_subject,
-        st.session_state.selected_topic,
-        st.session_state.final_quiz_score,
-        10,
-        "final"
+    # Show current question if available and no feedback is showing
+    elif st.session_state.current_adaptive_question is not None:
+        display_current_adaptive_question()
+    
+    # Always show control buttons
+    display_quiz_controls()
+
+def generate_next_adaptive_question():
+    """Generate the next adaptive question based on performance"""
+    
+    with st.spinner(f"🎯 Generating {st.session_state.continuous_quiz_difficulty} question..."):
+        try:
+            quiz_generator = QuizGenerator(st.session_state.api_key)
+            stats = st.session_state.continuous_quiz_stats
+            
+            # Generate next question
+            question = quiz_generator.generate_next_adaptive_question(
+                topic=st.session_state.selected_topic,
+                subject=st.session_state.selected_subject,
+                class_level=st.session_state.selected_class,
+                difficulty=st.session_state.continuous_quiz_difficulty,
+                previous_wrong_answer=stats.get('last_wrong_concept'),
+                question_history=stats.get('question_history', [])
+            )
+            
+            if question:
+                st.session_state.current_adaptive_question = question
+                # Add to question history
+                stats['question_history'].append(question['question'])
+                # Keep only last 10 questions in history
+                if len(stats['question_history']) > 10:
+                    stats['question_history'] = stats['question_history'][-10:]
+            else:
+                st.error("❌ Could not generate question. Please try again.")
+                
+        except Exception as e:
+            st.error(f"⚠️ Error generating question: {str(e)}")
+
+def display_current_adaptive_question():
+    """Display the current adaptive question"""
+    
+    question = st.session_state.current_adaptive_question
+    stats = st.session_state.continuous_quiz_stats
+    
+    st.markdown("---")
+    st.markdown(f"### 📝 Question #{stats['total_questions'] + 1}")
+    st.markdown(f"**Difficulty Level:** {st.session_state.continuous_quiz_difficulty.title()}")
+    st.markdown("")
+    st.markdown(f"**{question['question']}**")
+    
+    # Answer options
+    selected_answer = st.radio(
+        "Select your answer:", 
+        question['options'], 
+        key=f"adaptive_q_{stats['total_questions']}"
     )
     
-    # Show detailed results
-    with st.expander("📊 Detailed Results"):
-        for i, answer in enumerate(st.session_state.final_quiz_answers):
-            if answer['is_correct']:
-                st.success(f"Q{i+1}: ✅ Correct")
-            else:
-                st.error(f"Q{i+1}: ❌ Your answer: {answer['selected']} | Correct: {answer['correct']}")
-    
-    col1, col2 = st.columns(2)
+    # Submit button
+    col1, col2 = st.columns([1, 3])
     
     with col1:
-        if st.button("🔄 Retake Quiz"):
-            st.session_state.final_quiz_started = False
-            st.session_state.final_quiz_questions = []
-            st.session_state.final_quiz_current = 0
-            st.session_state.final_quiz_score = 0
-            st.session_state.final_quiz_answers = []
+        if st.button("✅ Submit Answer", type="primary"):
+            submit_adaptive_answer(selected_answer, question)
+
+def submit_adaptive_answer(selected_answer: str, question: Dict):
+    """Process the submitted answer"""
+    
+    stats = st.session_state.continuous_quiz_stats
+    is_correct = selected_answer == question['correct_answer']
+    
+    # Update stats
+    stats['total_questions'] += 1
+    if is_correct:
+        stats['correct_answers'] += 1
+        stats['consecutive_correct'] += 1
+        stats['consecutive_wrong'] = 0
+        stats['last_wrong_concept'] = None
+    else:
+        stats['consecutive_correct'] = 0
+        stats['consecutive_wrong'] += 1
+        stats['last_wrong_concept'] = question.get('concept_focus', question['question'])
+    
+    # Store answer results for feedback
+    st.session_state.last_answer_correct = is_correct
+    st.session_state.last_question = question
+    st.session_state.last_selected_answer = selected_answer
+    
+    # Update difficulty based on performance
+    quiz_generator = QuizGenerator(st.session_state.api_key)
+    new_difficulty = quiz_generator.determine_next_difficulty(
+        current_difficulty=st.session_state.continuous_quiz_difficulty,
+        is_correct=is_correct,
+        consecutive_correct=stats['consecutive_correct'],
+        consecutive_wrong=stats['consecutive_wrong']
+    )
+    st.session_state.continuous_quiz_difficulty = new_difficulty
+    
+    # Show feedback
+    st.session_state.show_feedback = True
+    st.session_state.current_adaptive_question = None
+    
+    st.rerun()
+
+def display_answer_feedback():
+    """Display feedback for the last answer"""
+    
+    is_correct = st.session_state.last_answer_correct
+    question = st.session_state.last_question
+    selected_answer = st.session_state.last_selected_answer
+    stats = st.session_state.continuous_quiz_stats
+    
+    st.markdown("---")
+    
+    # Show feedback
+    if is_correct:
+        st.success("🎉 **Correct!** Well done!")
+        if stats['consecutive_correct'] >= 2:
+            st.info(f"🔥 Great streak! You've got {stats['consecutive_correct']} correct in a row!")
+    else:
+        st.error("❌ **Incorrect.**")
+        st.markdown(f"**Your answer:** {selected_answer}")
+        st.markdown(f"**Correct answer:** {question['correct_answer']}")
+    
+    # Show explanation
+    if question.get('explanation'):
+        with st.expander("💡 Explanation"):
+            st.markdown(question['explanation'])
+    
+    # Show difficulty change notification
+    if stats['consecutive_correct'] >= 2 and st.session_state.continuous_quiz_difficulty != "easy":
+        st.info(f"🎯 **Level Up!** Moving to {st.session_state.continuous_quiz_difficulty} questions!")
+    elif stats['consecutive_wrong'] >= 2 and st.session_state.continuous_quiz_difficulty != "hard":
+        st.info(f"📚 **Adjusting difficulty** to help you learn better!")
+    
+    # Continue button
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        if st.button("➡️ Next Question", type="primary"):
+            st.session_state.show_feedback = False
             st.rerun()
     
     with col2:
-        if st.button("📚 Study Another Topic"):
-            st.session_state.current_page = "topic_selection"
-            st.session_state.selected_topic = None
-            # Reset quiz state
-            st.session_state.final_quiz_started = False
+        if not is_correct:
+            if st.button("🔄 More Practice on This Concept"):
+                # Force a related question on the same concept
+                stats['last_wrong_concept'] = question.get('concept_focus', question['question'])
+                st.session_state.show_feedback = False
+                st.rerun()
+
+def display_quiz_controls():
+    """Display quiz control buttons"""
+    
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🏁 I'm Ready for Final Quiz!"):
+            st.session_state.continuous_quiz_active = False
+            st.session_state.current_adaptive_question = None
+            st.session_state.show_feedback = False
+            
+            # Show final quiz recommendation
+            stats = st.session_state.continuous_quiz_stats
+            if stats['total_questions'] >= 5:
+                accuracy = (stats['correct_answers'] / stats['total_questions']) * 100
+                if accuracy >= 70:
+                    st.success("🎉 Great job! You're ready for the Final Quiz!")
+                    st.info("💡 **Tip:** Click on 'Final Quiz' in the sidebar to take the comprehensive test.")
+                else:
+                    st.warning("📚 Consider practicing a bit more before taking the Final Quiz.")
+                    st.info(f"Current accuracy: {accuracy:.1f}% - Try to get above 70% for better preparation!")
+            else:
+                st.info("💡 **Tip:** Answer at least 5 questions before moving to the Final Quiz for better preparation!")
+            
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Restart Quiz"):
+            # Reset all quiz state
+            st.session_state.continuous_quiz_active = False
+            st.session_state.continuous_quiz_stats = {
+                'total_questions': 0,
+                'correct_answers': 0,
+                'consecutive_correct': 0,
+                'consecutive_wrong': 0,
+                'question_history': [],
+                'last_wrong_concept': None
+            }
+            st.session_state.continuous_quiz_difficulty = "easy"
+            st.session_state.current_adaptive_question = None
+            st.session_state.show_feedback = False
+            st.rerun()
+    
+    with col3:
+        if st.button("🏠 Back to Learning Hub"):
+            st.session_state.continuous_quiz_active = False
+            st.session_state.current_adaptive_question = None
+            st.session_state.show_feedback = False
+            st.rerun()
+
+def final_quiz_section():
+    """Final comprehensive quiz section"""
+    st.subheader("📝 Final Comprehensive Quiz")
+    st.markdown("Test your complete understanding with a 10-question comprehensive quiz!")
+    
+    # Initialize final quiz state
+    if 'final_quiz_active' not in st.session_state:
+        st.session_state.final_quiz_active = False
+        st.session_state.final_quiz_questions = []
+        st.session_state.final_quiz_answers = {}
+        st.session_state.final_quiz_submitted = False
+        st.session_state.final_quiz_score = 0
+    
+    if not st.session_state.final_quiz_active:
+        # Quiz start section
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown("### 🎯 **Ready for the Final Challenge?**")
+            st.markdown("""
+            **What you'll get:**
+            - 10 comprehensive questions
+            - Mix of easy, medium, and hard difficulty
+            - Covers all aspects of the topic
+            - Detailed feedback and explanations
+            - Performance analytics
+            """)
+            
+            if st.button("🚀 Start Final Quiz", type="primary", use_container_width=True):
+                generate_final_quiz()
+        
+        with col2:
+            # Show preparation tips
+            st.markdown("### 💡 **Preparation Tips**")
+            st.markdown("""
+            ✅ Review topic explanation  
+            ✅ Complete mini quiz practice  
+            ✅ Watch educational videos  
+            ✅ Aim for 70%+ score  
+            ✅ Take your time to think  
+            """)
+    
+    elif not st.session_state.final_quiz_submitted:
+        # Active quiz
+        conduct_final_quiz()
+    
+    else:
+        # Show results
+        display_final_quiz_results()
+
+def generate_final_quiz():
+    """Generate final quiz questions"""
+    with st.spinner("🎯 Generating comprehensive final quiz..."):
+        try:
+            quiz_generator = QuizGenerator(st.session_state.api_key)
+            
+            questions = quiz_generator.generate_final_quiz(
+                topic=st.session_state.selected_topic,
+                subject=st.session_state.selected_subject,
+                class_level=st.session_state.selected_class
+            )
+            
+            if questions and len(questions) > 0:
+                st.session_state.final_quiz_questions = questions
+                st.session_state.final_quiz_active = True
+                st.session_state.final_quiz_answers = {}
+                st.session_state.final_quiz_submitted = False
+                st.success("✅ Final quiz generated successfully!")
+                st.rerun()
+            else:
+                st.error("❌ Could not generate quiz questions. Please try again.")
+                
+        except Exception as e:
+            st.error(f"⚠️ Error generating final quiz: {str(e)}")
+
+def conduct_final_quiz():
+    """Display and conduct final quiz"""
+    questions = st.session_state.final_quiz_questions
+    
+    st.markdown("### 📝 **Final Comprehensive Quiz**")
+    st.markdown(f"**Topic:** {st.session_state.selected_topic}")
+    st.markdown("**Instructions:** Answer all 10 questions and submit when ready.")
+    
+    st.markdown("---")
+    
+    # Display all questions
+    for i, question in enumerate(questions):
+        st.markdown(f"#### Question {i+1}")
+        st.markdown(f"**{question['question']}**")
+        
+        # Answer options
+        answer_key = f"final_q_{i}"
+        selected_answer = st.radio(
+            "Select your answer:",
+            question['options'],
+            key=answer_key,
+            index=None
+        )
+        
+        # Store answer
+        if selected_answer:
+            st.session_state.final_quiz_answers[i] = selected_answer
+        
+        st.markdown("---")
+    
+    # Submit button
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col2:
+        answered_count = len(st.session_state.final_quiz_answers)
+        total_questions = len(questions)
+        
+        if answered_count == total_questions:
+            if st.button("✅ Submit Final Quiz", type="primary", use_container_width=True):
+                calculate_final_quiz_score()
+        else:
+            st.warning(f"⚠️ Please answer all questions ({answered_count}/{total_questions} completed)")
+            st.button("✅ Submit Final Quiz", disabled=True, use_container_width=True)
+
+def calculate_final_quiz_score():
+    """Calculate and store final quiz score"""
+    questions = st.session_state.final_quiz_questions
+    answers = st.session_state.final_quiz_answers
+    
+    correct_count = 0
+    detailed_results = []
+    
+    for i, question in enumerate(questions):
+        user_answer = answers.get(i, "")
+        correct_answer = question['correct_answer']
+        is_correct = user_answer == correct_answer
+        
+        if is_correct:
+            correct_count += 1
+        
+        detailed_results.append({
+            'question': question['question'],
+            'user_answer': user_answer,
+            'correct_answer': correct_answer,
+            'is_correct': is_correct,
+            'explanation': question.get('explanation', ''),
+            'difficulty': question.get('difficulty', 'medium')
+        })
+    
+    # Calculate score
+    total_questions = len(questions)
+    score_percentage = (correct_count / total_questions) * 100
+    
+    # Store results
+    st.session_state.final_quiz_score = score_percentage
+    st.session_state.final_quiz_detailed_results = detailed_results
+    st.session_state.final_quiz_submitted = True
+    
+    # Record in history
+    st.session_state.student_history.add_quiz_attempt(
+        topic=st.session_state.selected_topic,
+        quiz_type="Final Quiz",
+        score=score_percentage,
+        total_questions=total_questions,
+        correct_answers=correct_count
+    )
+    
+    st.rerun()
+
+def display_final_quiz_results():
+    """Display final quiz results and feedback"""
+    score = st.session_state.final_quiz_score
+    results = st.session_state.final_quiz_detailed_results
+    
+    st.markdown("### 🎊 **Final Quiz Results**")
+    
+    # Score display
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Your Score", f"{score:.1f}%")
+    
+    with col2:
+        correct_count = sum(1 for r in results if r['is_correct'])
+        st.metric("Correct Answers", f"{correct_count}/{len(results)}")
+    
+    with col3:
+        if score >= 80:
+            grade = "Excellent! 🏆"
+            color = "success"
+        elif score >= 70:
+            grade = "Good! 👍"
+            color = "success"
+        elif score >= 60:
+            grade = "Fair 📚"
+            color = "warning"
+        else:
+            grade = "Needs Improvement 📖"
+            color = "error"
+        
+        if color == "success":
+            st.success(grade)
+        elif color == "warning":
+            st.warning(grade)
+        else:
+            st.error(grade)
+    
+    # Performance feedback
+    st.markdown("---")
+    
+    if score >= 80:
+        st.success("🎉 **Outstanding Performance!** You have excellent mastery of this topic!")
+    elif score >= 70:
+        st.success("👏 **Good Job!** You have a solid understanding of this topic!")
+    elif score >= 60:
+        st.warning("📚 **Fair Performance.** Consider reviewing the topic and practicing more.")
+    else:
+        st.error("📖 **Needs Improvement.** Please review the topic materials and try the mini quiz for more practice.")
+    
+    # Detailed results
+    st.markdown("### 📊 **Detailed Results**")
+    
+    for i, result in enumerate(results):
+        with st.expander(f"Question {i+1} - {'✅ Correct' if result['is_correct'] else '❌ Incorrect'}"):
+            st.markdown(f"**Question:** {result['question']}")
+            st.markdown(f"**Your Answer:** {result['user_answer']}")
+            st.markdown(f"**Correct Answer:** {result['correct_answer']}")
+            
+            if result['explanation']:
+                st.markdown(f"**Explanation:** {result['explanation']}")
+            
+            st.markdown(f"**Difficulty:** {result['difficulty'].title()}")
+    
+    # Action buttons
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🔄 Retake Final Quiz"):
+            st.session_state.final_quiz_active = False
+            st.session_state.final_quiz_submitted = False
             st.session_state.final_quiz_questions = []
-            st.session_state.final_quiz_current = 0
-            st.session_state.final_quiz_score = 0
-            st.session_state.final_quiz_answers = []
+            st.session_state.final_quiz_answers = {}
+            st.rerun()
+    
+    with col2:
+        if st.button("🧩 Practice More (Mini Quiz)"):
+            # Switch to mini quiz
+            st.session_state.final_quiz_active = False
+            st.session_state.final_quiz_submitted = False
+            st.rerun()
+    
+    with col3:
+        if st.button("🏠 Back to Learning Hub"):
+            st.session_state.final_quiz_active = False
+            st.session_state.final_quiz_submitted = False
             st.rerun()
 
 def progress_section():
-    """Student progress and history section"""
+    """Student progress tracking section"""
     st.subheader("📊 My Learning Progress")
     
     history = st.session_state.student_history
     
-    # Stats overview
-    col1, col2, col3 = st.columns(3)
+    # Overview stats
+    st.markdown("### 📈 **Overview**")
+    
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("📚 Topics Studied", len(history.topics_studied))
+        topics_studied = len(history.topics_studied)
+        st.metric("Topics Studied", topics_studied)
     
     with col2:
-        st.metric("📝 Quizzes Taken", len(history.quiz_results))
+        quizzes_taken = len(history.quiz_attempts)
+        st.metric("Quizzes Taken", quizzes_taken)
     
     with col3:
-        if history.quiz_results:
-            avg_score = sum(result['score'] for result in history.quiz_results) / len(history.quiz_results)
-            st.metric("📈 Average Score", f"{avg_score:.1f}/10")
+        videos_watched = len(history.video_views)
+        st.metric("Videos Watched", videos_watched)
     
-    # Download progress report
-    if st.button("📥 Download Progress Report", type="primary"):
-        report_content = history.generate_progress_report(st.session_state.student_name)
-        st.download_button(
-            label="💾 Save Report",
-            data=report_content,
-            file_name=f"{st.session_state.student_name}_learning_report_{datetime.now().strftime('%Y%m%d')}.txt",
-            mime="text/plain"
-        )
+    with col4:
+        if quizzes_taken > 0:
+            avg_score = sum(q['score'] for q in history.quiz_attempts) / quizzes_taken
+            st.metric("Average Score", f"{avg_score:.1f}%")
+        else:
+            st.metric("Average Score", "N/A")
     
-    # Recent activities
-    st.markdown("### 📈 Recent Activities")
+    # Recent activity
+    st.markdown("### 🕒 **Recent Activity**")
     
     if history.topics_studied:
-        st.markdown("**📚 Recently Studied:**")
-        for topic in history.topics_studied[-5:]:  # Last 5 topics
-            st.markdown(f"- {topic['topic']} ({topic['subject']} - {topic['class']})")
+        st.markdown("**Topics Studied:**")
+        for topic_data in history.topics_studied[-5:]:  # Last 5 topics
+            timestamp = topic_data['timestamp'].strftime("%Y-%m-%d %H:%M")
+            st.markdown(f"• {topic_data['topic']} ({topic_data['subject']}) - {timestamp}")
     
-    if history.quiz_results:
-        st.markdown("**📝 Recent Quiz Results:**")
-        for result in history.quiz_results[-5:]:  # Last 5 quizzes
-            score_pct = (result['score'] / result['total']) * 100
-            st.markdown(f"- {result['topic']}: {result['score']}/{result['total']} ({score_pct:.1f}%)")
+    if history.quiz_attempts:
+        st.markdown("**Recent Quiz Attempts:**")
+        for quiz_data in history.quiz_attempts[-5:]:  # Last 5 quizzes
+            timestamp = quiz_data['timestamp'].strftime("%Y-%m-%d %H:%M")
+            st.markdown(f"• {quiz_data['topic']} - {quiz_data['score']:.1f}% - {timestamp}")
+    
+    # Export data buttons
+    st.markdown("---")
+    st.markdown("### 📥 **Export Learning Reports**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
+            with st.spinner("� Generating PDF report..."):
+                try:
+                    pdf_data = history.generate_pdf_report(st.session_state.student_name)
+                    
+                    st.download_button(
+                        label="�📥 Download PDF Report",
+                        data=pdf_data,
+                        file_name=f"learning_report_{st.session_state.student_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                    st.success("✅ PDF report generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error generating PDF: {str(e)}")
+    
+    with col2:
+        if st.button("📊 Export JSON Data", use_container_width=True):
+            export_data = {
+                'student_name': st.session_state.student_name,
+                'topics_studied': [
+                    {
+                        'topic': t['topic'],
+                        'subject': t['subject'],
+                        'chapter': t['chapter'],
+                        'class': t['class'],
+                        'timestamp': t['timestamp'].isoformat()
+                    }
+                    for t in history.topics_studied
+                ],
+                'quiz_attempts': [
+                    {
+                        'topic': q['topic'],
+                        'quiz_type': q['quiz_type'],
+                        'score': q['score'],
+                        'total_questions': q['total_questions'],
+                        'correct_answers': q['correct_answers'],
+                        'timestamp': q['timestamp'].isoformat()
+                    }
+                    for q in history.quiz_attempts
+                ],
+                'video_views': [
+                    {
+                        'topic': v['topic'],
+                        'video_title': v['video_title'],
+                        'timestamp': v['timestamp'].isoformat()
+                    }
+                    for v in history.video_views
+                ]
+            }
+            
+            json_data = json.dumps(export_data, indent=2)
+            st.download_button(
+                label="📥 Download JSON Data",
+                data=json_data,
+                file_name=f"learning_data_{st.session_state.student_name}_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
 
 def main():
     """Main application function"""
+    
+    # Initialize session state
     initialize_session_state()
     
-    # Navigation based on current page
+    # Display appropriate page based on current state
     if st.session_state.current_page == "authentication":
         authentication_page()
     elif st.session_state.current_page == "class_selection":
