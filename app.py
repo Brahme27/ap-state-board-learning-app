@@ -91,6 +91,16 @@ def initialize_session_state():
         st.session_state.final_quiz_score = 0
     if 'final_quiz_detailed_results' not in st.session_state:
         st.session_state.final_quiz_detailed_results = []
+    
+    # Popup Q&A session state
+    if 'show_qa_popup' not in st.session_state:
+        st.session_state.show_qa_popup = False
+    if 'popup_chat_history' not in st.session_state:
+        st.session_state.popup_chat_history = []
+    
+    # Topic explanation session state
+    if 'current_explanation' not in st.session_state:
+        st.session_state.current_explanation = None
 
 def authentication_page():
     """Authentication page for API key and student details"""
@@ -200,6 +210,8 @@ def topic_selection_page():
             st.session_state.current_page = "learning_hub"
             # Reset chat history for new topic
             st.session_state.chat_history = []
+            # Reset explanation for new topic
+            st.session_state.current_explanation = None
             # Reset continuous quiz state for new topic
             if 'continuous_quiz_active' in st.session_state:
                 st.session_state.continuous_quiz_active = False
@@ -238,6 +250,8 @@ def learning_hub_page():
         if st.button("🏠 Back to Topics"):
             st.session_state.current_page = "topic_selection"
             st.session_state.selected_topic = None
+            # Reset explanation when leaving topic
+            st.session_state.current_explanation = None
             # Reset quiz states when leaving topic
             if 'continuous_quiz_active' in st.session_state:
                 st.session_state.continuous_quiz_active = False
@@ -261,7 +275,17 @@ def topic_explanation_section():
     """Topic explanation section"""
     st.subheader("📖 Topic Explanation")
     
-    if st.button("🎯 Generate Explanation", type="primary"):
+    # Create two columns for the main button and popup button
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        generate_explanation = st.button("🎯 Generate Explanation", type="primary")
+    
+    with col2:
+        open_qa_popup = st.button("💬 Quick Q&A", help="Ask questions about this topic in a popup")
+    
+    # Handle explanation generation
+    if generate_explanation:
         with st.spinner("🤖 AI is preparing your lesson..."):
             ai_assistant = AIAssistant(st.session_state.api_key)
             
@@ -271,8 +295,8 @@ def topic_explanation_section():
                 class_level=st.session_state.selected_class
             )
             
-            st.markdown("### 📚 Lesson Content")
-            st.markdown(explanation)
+            # Store explanation in session state
+            st.session_state.current_explanation = explanation
             
             # Record this study session
             st.session_state.student_history.add_topic_studied(
@@ -281,6 +305,100 @@ def topic_explanation_section():
                 st.session_state.selected_chapter,
                 st.session_state.selected_topic
             )
+    
+    # Display explanation if it exists
+    if st.session_state.current_explanation:
+        st.markdown("### 📚 Lesson Content")
+        st.markdown(st.session_state.current_explanation)
+    
+    # Handle Q&A popup
+    if open_qa_popup:
+        st.session_state.show_qa_popup = True
+    
+    # Initialize popup state if not exists
+    if 'show_qa_popup' not in st.session_state:
+        st.session_state.show_qa_popup = False
+    
+    # Show Q&A popup dialog
+    if st.session_state.show_qa_popup:
+        show_qa_popup_dialog()
+
+@st.dialog("💬 Quick Q&A")
+def show_qa_popup_dialog():
+    """Popup dialog for interactive Q&A about the current topic"""
+    
+    # Initialize popup chat history if not exists
+    if 'popup_chat_history' not in st.session_state:
+        st.session_state.popup_chat_history = []
+    
+    # Display current topic info
+    topic_title = st.session_state.get('selected_topic', 'Unknown Topic')
+    subject_info = st.session_state.get('selected_subject', 'Unknown Subject')
+    class_info = st.session_state.get('selected_class', 'Unknown Class')
+    
+    st.markdown(f"**🎯 Current Topic:** {topic_title}")
+    st.markdown(f"**📚 Subject:** {subject_info} ({class_info})")
+    st.markdown("---")
+    
+    # Display popup chat history in a container with max height
+    chat_container = st.container(height=300)
+    with chat_container:
+        if not st.session_state.popup_chat_history:
+            st.info("👋 Ask me anything about this topic! I'm here to help you understand better.")
+        else:
+            for message in st.session_state.popup_chat_history:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+    
+    # Chat input for popup
+    popup_prompt = st.chat_input("Ask your question about the topic...", key="popup_chat_input")
+    
+    if popup_prompt:
+        # Add user message to popup chat history
+        st.session_state.popup_chat_history.append({"role": "user", "content": popup_prompt})
+        
+        # Generate AI response
+        with st.spinner("🤔 Thinking..."):
+            ai_assistant = AIAssistant(st.session_state.api_key)
+            
+            response = ai_assistant.answer_question(
+                question=popup_prompt,
+                topic=st.session_state.selected_topic,
+                subject=st.session_state.selected_subject,
+                class_level=st.session_state.selected_class
+            )
+            
+            # Add assistant response to popup chat history
+            st.session_state.popup_chat_history.append({"role": "assistant", "content": response})
+            
+            # Record this interaction
+            st.session_state.student_history.add_chat_interaction(
+                st.session_state.selected_topic,
+                popup_prompt,
+                response
+            )
+        
+        st.rerun()
+    
+    # Close button
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("🗑️ Clear Chat", use_container_width=True):
+            st.session_state.popup_chat_history = []
+            st.rerun()
+    
+    with col2:
+        if st.button("📋 Copy to Main Chat", use_container_width=True):
+            # Copy popup chat to main chat history
+            st.session_state.chat_history.extend(st.session_state.popup_chat_history)
+            st.session_state.popup_chat_history = []
+            st.success("✅ Chat copied to main Q&A section!")
+            st.rerun()
+    
+    with col3:
+        if st.button("❌ Close", use_container_width=True):
+            st.session_state.show_qa_popup = False
+            st.rerun()
 
 def interactive_qa_section():
     """Interactive Q&A chat section"""
