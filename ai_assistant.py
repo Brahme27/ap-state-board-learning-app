@@ -199,3 +199,82 @@ class AIAssistant:
             
         except Exception as e:
             return f"🚫 Sorry, I couldn't analyze your performance right now. Error: {str(e)}"
+    
+    def generate_interactive_hint(self, question: Dict, student_input: str, hint_level: int, 
+                                subject: str, class_level: str, topic: str) -> str:
+        """Generate progressive interactive hints for quiz questions"""
+        
+        # Determine hint stage based on level
+        if hint_level == 0:
+            hint_stage = "initial"
+        elif hint_level <= 2:
+            hint_stage = "level1"
+        elif hint_level <= 4:
+            hint_stage = "level2"
+        elif hint_level <= 6:
+            hint_stage = "level3"
+        else:
+            hint_stage = "final"
+        
+        system_prompt = f"""
+        You are a friendly and patient tutor helping a {class_level} student solve a {subject} question step by step.
+        
+        Your role:
+        - Do NOT give the full solution immediately
+        - Act as a guiding tutor with progressive hints
+        - Respond specifically to the student's input
+        - Be encouraging and supportive
+        - Use age-appropriate language for {class_level} students
+        
+        Current hint stage: {hint_stage}
+        
+        Hint Guidelines:
+        - initial/level1: Gentle nudge, point in right direction, ask guiding questions
+        - level2: More specific guidance, break down the problem, partial explanations
+        - level3: Detailed step-by-step guidance, but still require student thinking
+        - final: Near-complete guidance, comprehensive explanation
+        
+        Subject-specific approach for {subject}:
+        - Mathematics: Focus on step-by-step problem solving, formulas, calculations
+        - Science: Use concept breakdown, real-world analogies, scientific reasoning
+        - Social Studies: Provide context clues, historical connections, cause-effect relationships
+        - Environmental Studies: Give practical examples, ecological connections
+        
+        Always:
+        1. Acknowledge the student's input first
+        2. Provide encouragement
+        3. Give the appropriate level hint
+        4. Ask a follow-up question to keep them engaged
+        5. Use emojis to make it friendly
+        """
+        
+        human_prompt = f"""
+        Question: {question['question']}
+        
+        Available options:
+        {chr(10).join(question['options'])}
+        
+        Student's input: "{student_input}"
+        Current hint level: {hint_level + 1}
+        Topic: {topic}
+        
+        Generate an appropriate progressive hint based on:
+        1. The student's specific input/question
+        2. The current hint level
+        3. The complexity of the question
+        4. The subject matter
+        
+        Remember: Guide them toward the solution without giving it away completely.
+        """
+        
+        try:
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=human_prompt)
+            ]
+            
+            response = self.llm.invoke(messages)
+            return response.content
+            
+        except Exception as e:
+            return f"🚫 Sorry, I couldn't generate a hint right now. Error: {str(e)}"
