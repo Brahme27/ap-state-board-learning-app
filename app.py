@@ -78,16 +78,6 @@ def initialize_session_state():
     if 'last_selected_answer' not in st.session_state:
         st.session_state.last_selected_answer = None
     
-    # Hint system session state
-    if 'show_hint_popup' not in st.session_state:
-        st.session_state.show_hint_popup = False
-    if 'hint_chat_history' not in st.session_state:
-        st.session_state.hint_chat_history = []
-    if 'hint_level' not in st.session_state:
-        st.session_state.hint_level = 0
-    if 'hint_question_data' not in st.session_state:
-        st.session_state.hint_question_data = None
-    
     # Final quiz session state
     if 'final_quiz_active' not in st.session_state:
         st.session_state.final_quiz_active = False
@@ -111,6 +101,16 @@ def initialize_session_state():
     # Topic explanation session state
     if 'current_explanation' not in st.session_state:
         st.session_state.current_explanation = None
+    
+    # Hint system session state
+    if 'show_hint_popup' not in st.session_state:
+        st.session_state.show_hint_popup = False
+    if 'hint_chat_history' not in st.session_state:
+        st.session_state.hint_chat_history = []
+    if 'current_hint_question' not in st.session_state:
+        st.session_state.current_hint_question = None
+    if 'hint_level' not in st.session_state:
+        st.session_state.hint_level = 0
 
 def authentication_page():
     """Authentication page for API key and student details"""
@@ -285,6 +285,21 @@ def topic_explanation_section():
     """Topic explanation section"""
     st.subheader("📖 Topic Explanation")
     
+    # Custom CSS for red buttons
+    st.markdown("""
+    <style>
+    .stButton > button[kind="primary"] {
+        background-color: #ff4b4b !important;
+        color: white !important;
+        border: none !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background-color: #ff3030 !important;
+        color: white !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Create two columns for the main button and popup button
     col1, col2 = st.columns([3, 1])
     
@@ -292,7 +307,7 @@ def topic_explanation_section():
         generate_explanation = st.button("🎯 Generate Explanation", type="primary")
     
     with col2:
-        open_qa_popup = st.button("💬 Quick Q&A", help="Ask questions about this topic in a popup")
+        open_qa_popup = st.button("🤖 AI Assistant", type="primary", help="Ask questions about this topic in a popup")
     
     # Handle explanation generation
     if generate_explanation:
@@ -333,7 +348,7 @@ def topic_explanation_section():
     if st.session_state.show_qa_popup:
         show_qa_popup_dialog()
 
-@st.dialog("💬 Quick Q&A")
+@st.dialog("🤖 AI Assistant")
 def show_qa_popup_dialog():
     """Popup dialog for interactive Q&A about the current topic"""
     
@@ -410,74 +425,75 @@ def show_qa_popup_dialog():
             st.session_state.show_qa_popup = False
             st.rerun()
 
-@st.dialog("💡 Interactive Hint System")
+@st.dialog("💡 AI Tutor - Question Hint")
 def show_hint_popup_dialog():
-    """Interactive hint system popup for quiz questions"""
+    """Popup dialog for interactive hints about the current quiz question"""
     
-    if not st.session_state.hint_question_data:
-        st.error("No question data available for hints.")
-        return
+    # Initialize hint chat history if not exists
+    if 'hint_chat_history' not in st.session_state:
+        st.session_state.hint_chat_history = []
     
-    question = st.session_state.hint_question_data
+    question = st.session_state.current_hint_question
     
-    # Display question info
-    st.markdown(f"**❓ Question:** {question['question']}")
-    st.markdown(f"**📚 Subject:** {st.session_state.selected_subject}")
-    st.markdown(f"**🎯 Topic:** {st.session_state.selected_topic}")
+    # Display current question info
+    st.markdown("**📝 Question:**")
+    st.markdown(f"*{question['question']}*")
     st.markdown("---")
     
-    # Initialize hint system if first time
-    if not st.session_state.hint_chat_history:
-        # Add initial tutor message
-        initial_message = f"""👋 Hi! I'm your tutor for this question. 
-
-**My goal:** Help you solve this step by step, WITHOUT giving away the full answer immediately!
-
-**How I work:**
-🔍 I'll give you progressive hints
-💭 Wait for your response before the next hint  
-📝 Guide you through the problem-solving process
-✨ Only show the complete solution if you really need it
-
-**Ready to start?** Tell me what you think about this question or ask for your first hint!"""
-        
-        st.session_state.hint_chat_history.append({
-            "role": "assistant", 
-            "content": initial_message
-        })
-    
     # Display hint chat history in a container with max height
-    chat_container = st.container(height=400)
+    chat_container = st.container(height=300)
     with chat_container:
-        for message in st.session_state.hint_chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        if not st.session_state.hint_chat_history:
+            # Generate initial hint using AI based on the specific question
+            with st.spinner("🤔 Generating your first hint..."):
+                ai_assistant = AIAssistant(st.session_state.api_key)
+                
+                # Generate first hint for this specific question
+                first_hint = ai_assistant.generate_interactive_hint(
+                    question=question,
+                    student_input="",  # Empty for first hint
+                    hint_level=1,  # First hint level
+                    subject=st.session_state.selected_subject,
+                    class_level=st.session_state.selected_class,
+                    topic=st.session_state.selected_topic
+                )
+                
+                st.session_state.hint_chat_history.append({"role": "assistant", "content": first_hint})
+                st.session_state.hint_level = 1  # Set initial hint level
+            
+            # Display the first hint
+            with st.chat_message("assistant"):
+                st.markdown(first_hint)
+        else:
+            for message in st.session_state.hint_chat_history:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
     
     # Chat input for hints
-    hint_prompt = st.chat_input("Ask for a hint or share your thoughts...", key="hint_chat_input")
+    hint_prompt = st.chat_input("Share your thoughts or ask for the next hint...", key="hint_chat_input")
     
     if hint_prompt:
         # Add user message to hint chat history
         st.session_state.hint_chat_history.append({"role": "user", "content": hint_prompt})
         
         # Generate AI hint response
-        with st.spinner("🤔 Thinking of the perfect hint..."):
+        with st.spinner("🤔 Generating next hint..."):
             ai_assistant = AIAssistant(st.session_state.api_key)
             
-            # Create specialized hint prompt
-            hint_response = generate_interactive_hint(
-                ai_assistant,
-                question,
-                hint_prompt,
-                st.session_state.hint_chat_history,
-                st.session_state.hint_level
+            # Increment hint level for next progressive hint
+            st.session_state.hint_level += 1
+            
+            response = ai_assistant.generate_interactive_hint(
+                question=question,
+                student_input=hint_prompt,
+                hint_level=st.session_state.hint_level,
+                subject=st.session_state.selected_subject,
+                class_level=st.session_state.selected_class,
+                topic=st.session_state.selected_topic
             )
             
             # Add assistant response to hint chat history
-            st.session_state.hint_chat_history.append({"role": "assistant", "content": hint_response})
-            
-            # Increment hint level
-            st.session_state.hint_level += 1
+            st.session_state.hint_chat_history.append({"role": "assistant", "content": response})
         
         st.rerun()
     
@@ -485,50 +501,31 @@ def show_hint_popup_dialog():
     col1, col2, col3 = st.columns([1, 1, 1])
     
     with col1:
-        if st.button("🔄 Reset Hints", use_container_width=True):
+        if st.button("🗑️ Clear Hints", use_container_width=True):
             st.session_state.hint_chat_history = []
             st.session_state.hint_level = 0
             st.rerun()
     
     with col2:
-        if st.button("🏳️ Show Solution", use_container_width=True):
-            # Add full solution to chat
-            solution_message = f"""🏁 **Complete Solution:**
+        if st.button("🎯 Show Answer", use_container_width=True):
+            # Show the complete answer as final hint
+            final_hint = f"""🎯 **Complete Answer:**
 
-**Answer:** {question['correct_answer']}
+**Correct Answer:** {question['correct_answer']}
 
-**Explanation:** {question.get('explanation', 'Solution explanation not available.')}
+**Explanation:** {question.get('explanation', 'This is the correct answer for this question.')}
 
-**Concept Focus:** {question.get('concept_focus', 'Key concept practice')}
+**Concept Focus:** {question.get('concept_focus', 'Understanding the key concept in this question.')}
 
-You can now go back to the quiz and submit your answer! 🎯"""
+Now that you know the answer, make sure you understand the reasoning behind it! 🧠"""
             
-            st.session_state.hint_chat_history.append({
-                "role": "assistant", 
-                "content": solution_message
-            })
+            st.session_state.hint_chat_history.append({"role": "assistant", "content": final_hint})
             st.rerun()
     
     with col3:
-        if st.button("❌ Close Hints", use_container_width=True):
+        if st.button("❌ Close", use_container_width=True):
             st.session_state.show_hint_popup = False
             st.rerun()
-
-def generate_interactive_hint(ai_assistant, question, student_input, chat_history, hint_level):
-    """Generate an interactive hint based on student input and progression"""
-    
-    try:
-        response = ai_assistant.generate_interactive_hint(
-            question=question,
-            student_input=student_input,
-            hint_level=hint_level,
-            subject=st.session_state.selected_subject,
-            class_level=st.session_state.selected_class,
-            topic=st.session_state.selected_topic
-        )
-        return response
-    except Exception as e:
-        return f"🚫 Sorry, I couldn't generate a hint right now. Error: {str(e)}"
 
 def interactive_qa_section():
     """Interactive Q&A chat section"""
@@ -833,7 +830,20 @@ def display_current_adaptive_question():
     st.markdown(f"### 📝 Question #{stats['total_questions'] + 1}")
     st.markdown(f"**Difficulty Level:** {st.session_state.continuous_quiz_difficulty.title()}")
     st.markdown("")
-    st.markdown(f"**{question['question']}**")
+    
+    # Question with hint button
+    col1, col2 = st.columns([4, 1])
+    
+    with col1:
+        st.markdown(f"**{question['question']}**")
+    
+    with col2:
+        if st.button("💡 Hint", use_container_width=True):
+            st.session_state.show_hint_popup = True
+            st.session_state.current_hint_question = question
+            st.session_state.hint_level = 0
+            st.session_state.hint_chat_history = []
+            st.rerun()
     
     # Answer options
     selected_answer = st.radio(
@@ -842,23 +852,11 @@ def display_current_adaptive_question():
         key=f"adaptive_q_{stats['total_questions']}"
     )
     
-    # Submit button and Hint button
-    col1, col2 = st.columns([1, 1])
+    # Submit button only
+    if st.button("✅ Submit Answer", type="primary", use_container_width=True):
+        submit_adaptive_answer(selected_answer, question)
     
-    with col1:
-        if st.button("✅ Submit Answer", type="primary"):
-            submit_adaptive_answer(selected_answer, question)
-    
-    with col2:
-        if st.button("💡 Get Hint", help="Get interactive hints to solve this question step by step"):
-            # Initialize hint system for this question
-            st.session_state.show_hint_popup = True
-            st.session_state.hint_question_data = question
-            st.session_state.hint_chat_history = []
-            st.session_state.hint_level = 0
-            st.rerun()
-    
-    # Show hint popup if active
+    # Show hint popup if requested
     if st.session_state.show_hint_popup:
         show_hint_popup_dialog()
 
@@ -1307,12 +1305,12 @@ def progress_section():
     
     with col1:
         if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
-            with st.spinner("� Generating PDF report..."):
+            with st.spinner("📄 Generating PDF report..."):
                 try:
                     pdf_data = history.generate_pdf_report(st.session_state.student_name)
                     
                     st.download_button(
-                        label="�📥 Download PDF Report",
+                        label="📥 Download PDF Report",
                         data=pdf_data,
                         file_name=f"learning_report_{st.session_state.student_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
                         mime="application/pdf",
