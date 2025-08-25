@@ -258,17 +258,135 @@ class QuizGenerator:
             # Try to parse JSON response
             try:
                 questions = json.loads(response.content)
-                # Ensure we have exactly 10 questions
-                if len(questions) != 10:
-                    questions = questions[:10] if len(questions) > 10 else questions + self._create_fallback_questions(topic, subject, class_level, "mixed", 10 - len(questions))
-                return questions
+                # Validate the questions
+                validated_questions = self.validate_quiz_questions(questions)
+                
+                # If we have at least some valid questions, use them and generate the rest individually
+                if len(validated_questions) > 0:
+                    # Use valid questions and generate remaining ones individually
+                    remaining_needed = 10 - len(validated_questions)
+                    if remaining_needed > 0:
+                        # Generate remaining questions individually using adaptive method
+                        for i in range(remaining_needed):
+                            difficulty = "easy" if i < 4 else "medium" if i < 8 else "hard"
+                            individual_question = self.generate_next_adaptive_question(
+                                topic, subject, class_level, difficulty
+                            )
+                            validated_questions.append(individual_question)
+                    
+                    return validated_questions[:10]  # Ensure exactly 10 questions
+                else:
+                    # If no valid questions, generate all individually
+                    return self._generate_individual_final_questions(topic, subject, class_level)
+                    
             except json.JSONDecodeError:
-                # If JSON parsing fails, create fallback questions
-                return self._create_fallback_questions(topic, subject, class_level, "mixed", 10)
+                # If JSON parsing fails, generate questions individually
+                return self._generate_individual_final_questions(topic, subject, class_level)
                 
         except Exception as e:
             print(f"Error generating final quiz: {e}")
-            return self._create_fallback_questions(topic, subject, class_level, "mixed", 10)
+            return self._generate_individual_final_questions(topic, subject, class_level)
+    
+    def _generate_individual_final_questions(self, topic: str, subject: str, class_level: str) -> List[Dict]:
+        """Generate final quiz questions individually when batch generation fails"""
+        questions = []
+        
+        # Generate 10 questions with varied difficulty
+        difficulties = ["easy"] * 4 + ["medium"] * 4 + ["hard"] * 2
+        
+        for i, difficulty in enumerate(difficulties):
+            try:
+                question = self.generate_next_adaptive_question(
+                    topic, subject, class_level, difficulty, 
+                    question_history=[q.get("question", "") for q in questions]
+                )
+                questions.append(question)
+            except Exception as e:
+                print(f"Error generating individual question {i+1}: {e}")
+                # Only use fallback for this specific question
+                fallback_question = self._create_single_fallback_question(topic, subject, class_level, difficulty, i+1)
+                questions.append(fallback_question)
+        
+        return questions
+    
+    def _create_single_fallback_question(self, topic: str, subject: str, class_level: str, difficulty: str, question_num: int) -> Dict:
+        """Create a single fallback question with better content than generic template"""
+        
+        # Better subject-specific templates
+        question_templates = {
+            "Mathematics": {
+                "easy": f"What is the basic principle of {topic}?",
+                "medium": f"How would you solve a problem involving {topic}?",
+                "hard": f"What is the most complex aspect of {topic}?"
+            },
+            "Science": {
+                "easy": f"What is {topic}?",
+                "medium": f"How does {topic} work in real life?", 
+                "hard": f"What are the advanced applications of {topic}?"
+            },
+            "Environmental Studies": {
+                "easy": f"Why is {topic} important for our environment?",
+                "medium": f"How does {topic} impact our daily lives?",
+                "hard": f"What are the long-term effects of {topic}?"
+            },
+            "English": {
+                "easy": f"What is the main idea of {topic}?",
+                "medium": f"How can we analyze {topic}?",
+                "hard": f"What is the deeper meaning of {topic}?"
+            },
+            "Social Studies": {
+                "easy": f"What is {topic} in history?",
+                "medium": f"How did {topic} influence society?",
+                "hard": f"What are the lasting impacts of {topic}?"
+            }
+        }
+        
+        # Get appropriate template
+        templates = question_templates.get(subject, question_templates["Science"])
+        question_text = templates.get(difficulty, templates["easy"])
+        
+        # Create subject-appropriate options
+        if subject == "Mathematics":
+            options = [
+                f"A) It involves calculations and formulas",
+                f"B) It's only theoretical",
+                f"C) It has no practical use",
+                f"D) It's too complex to understand"
+            ]
+            correct_answer = "A) It involves calculations and formulas"
+        elif subject == "Science":
+            options = [
+                f"A) It's a natural phenomenon or concept",
+                f"B) It's just a theory",
+                f"C) It doesn't affect us",
+                f"D) It's not important"
+            ]
+            correct_answer = "A) It's a natural phenomenon or concept"
+        elif subject == "Environmental Studies":
+            options = [
+                f"A) It helps us understand nature better",
+                f"B) It's not relevant today",
+                f"C) It only affects animals",
+                f"D) It's too complicated"
+            ]
+            correct_answer = "A) It helps us understand nature better"
+        else:
+            options = [
+                f"A) It's an important concept to understand",
+                f"B) It's not necessary to learn",
+                f"C) It's too difficult",
+                f"D) It has no meaning"
+            ]
+            correct_answer = "A) It's an important concept to understand"
+        
+        return {
+            "question": question_text,
+            "options": options,
+            "correct_answer": correct_answer,
+            "explanation": f"Understanding {topic} is fundamental to learning {subject} at the {class_level} level.",
+            "concept_focus": f"Understanding of {topic}",
+            "difficulty": difficulty
+        }
     
     def _create_fallback_questions(self, topic: str, subject: str, class_level: str, 
                                  difficulty: str, num_questions: int) -> List[Dict]:
