@@ -250,8 +250,11 @@ class AIAssistant:
             5. Does NOT reveal the answer directly
             
             Start with: "👋 Hi! I'm your tutor for this question.
+
             My goal: Help you solve this step by step, WITHOUT giving away the full answer immediately!
+            
             How I work: 🔍 I'll give you progressive hints 💭 Wait for your response before the next hint
+            
             📝 Guide you through the problem-solving process ✨ Only show the complete solution if you really need it
             
             Your first hint: [Generate a SPECIFIC hint about THIS question's content, keywords, numbers, or approach]"
