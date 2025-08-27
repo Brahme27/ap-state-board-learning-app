@@ -348,7 +348,7 @@ def topic_explanation_section():
     if st.session_state.show_qa_popup:
         show_qa_popup_dialog()
 
-@st.dialog("🤖 AI Assistant")
+@st.dialog("🤖 AI Assistant", width="large")
 def show_qa_popup_dialog():
     """Popup dialog for interactive Q&A about the current topic"""
     
@@ -425,7 +425,7 @@ def show_qa_popup_dialog():
             st.session_state.show_qa_popup = False
             st.rerun()
 
-@st.dialog("💡 AI Tutor - Question Hint")
+@st.dialog("💡 AI Tutor - Question Hint", width="large")
 def show_hint_popup_dialog():
     """Popup dialog for interactive hints about the current quiz question"""
     
