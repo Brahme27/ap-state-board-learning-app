@@ -17,7 +17,6 @@ from ai_assistant import AIAssistant
 from quiz_generator import QuizGenerator
 from video_recommender import VideoRecommender
 from student_history import StudentHistory
-from document_qa_rag import create_document_qa_interface
 
 # Page configuration
 st.set_page_config(
@@ -98,10 +97,6 @@ def initialize_session_state():
         st.session_state.show_qa_popup = False
     if 'popup_chat_history' not in st.session_state:
         st.session_state.popup_chat_history = []
-    
-    # Document Q&A popup session state
-    if 'show_doc_qa_popup' not in st.session_state:
-        st.session_state.show_doc_qa_popup = False
     
     # Topic explanation session state
     if 'current_explanation' not in st.session_state:
@@ -532,30 +527,10 @@ Now that you know the answer, make sure you understand the reasoning behind it! 
             st.session_state.show_hint_popup = False
             st.rerun()
 
-@st.dialog("📄 Document Q&A", width="large")
-def show_document_qa_popup():
-    """Popup dialog for Document Q&A with RAG functionality"""
-    # Create the document QA interface with simplified UI
-    create_document_qa_interface()
-    
-    # Close button
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("❌ Close", use_container_width=True, key="close_doc_qa"):
-            st.session_state.show_doc_qa_popup = False
-            st.rerun()
-
 def interactive_qa_section():
     """Interactive Q&A chat section"""
     st.subheader("💬 Interactive Q&A Chat")
     st.markdown("Ask any questions about the topic and get instant AI-powered answers!")
-    
-    # Add Document Q&A popup button
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        if st.button("📄 Document Q&A", type="secondary", use_container_width=True, help="Upload and ask questions about your own documents"):
-            st.session_state.show_doc_qa_popup = True
-            st.rerun()
     
     # Display chat history
     for message in st.session_state.chat_history:
@@ -1395,10 +1370,6 @@ def main():
     
     # Initialize session state
     initialize_session_state()
-    
-    # Show Document Q&A popup if requested
-    if st.session_state.show_doc_qa_popup:
-        show_document_qa_popup()
     
     # Display appropriate page based on current state
     if st.session_state.current_page == "authentication":
