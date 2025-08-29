@@ -1,7 +1,11 @@
 """
 Document Q&A with RAG (Retrieval-Augmented Generation)
-Uses ChromaDB as vector store for document embeddings
+Uses FAISS as vector store for document embeddings (if available, falls back to in-memory store)
 Supports PDF and TXT files
+
+Note: To use FAISS for better performance, install the faiss-cpu package:
+      pip install faiss-cpu
+      If FAISS is not available, the system will fall back to an in-memory vector store.
 """
 
 import streamlit as st
@@ -11,15 +15,8 @@ import shutil
 from typing import List, Dict, Any, Optional
 import uuid
 from datetime import datetime
-
-# Try imports with fallbacks
-try:
-    import chromadb
-    from chromadb.config import Settings
-    CHROMADB_AVAILABLE = True
-except ImportError:
-    CHROMADB_AVAILABLE = False
-    st.error("ChromaDB not installed. Please install with: pip install chromadb")
+import io
+import pickle
 
 # LangChain imports - updated for latest versions
 try:
@@ -28,12 +25,17 @@ try:
     from langchain.schema import Document
     from langchain.prompts import PromptTemplate
     
-    from langchain_community.vectorstores import Chroma
+    # Try importing FAISS, fall back to in-memory store if not available
+    try:
+        from langchain_community.vectorstores import FAISS
+        FAISS_AVAILABLE = True
+    except ImportError:
+        from langchain_community.vectorstores.memory import MemoryVectorStore
+        FAISS_AVAILABLE = False
+        
     from langchain_community.document_loaders import PyPDFLoader, TextLoader
-    
     from langchain_openai import OpenAI
     from langchain_openai import OpenAIEmbeddings
-    
     from langchain.chains import RetrievalQA
     LANGCHAIN_AVAILABLE = True
 except ImportError:
@@ -41,7 +43,15 @@ except ImportError:
         # Fallback to older imports (0.0.x)
         from langchain.text_splitter import RecursiveCharacterTextSplitter
         from langchain.embeddings.openai import OpenAIEmbeddings
-        from langchain.vectorstores import Chroma
+        
+        # Try importing FAISS, fall back to in-memory store if not available
+        try:
+            from langchain.vectorstores import FAISS
+            FAISS_AVAILABLE = True
+        except ImportError:
+            from langchain.vectorstores import InMemoryVectorStore as MemoryVectorStore
+            FAISS_AVAILABLE = False
+            
         from langchain.document_loaders import PyPDFLoader, TextLoader
         from langchain.schema import Document
         from langchain.chains import RetrievalQA
@@ -67,30 +77,27 @@ except ImportError:
         st.warning("PyPDF2 not available. PDF processing will be limited.")
 
 class DocumentQARAG:
-    """Document Q&A with RAG using ChromaDB - simplified version with minimal logging"""
+    """Document Q&A with RAG using FAISS (with fallback to in-memory store) - simplified version with minimal logging"""
     
     def __init__(self, api_key: str):
         """Initialize the Document Q&A RAG system"""
-        if not CHROMADB_AVAILABLE or not LANGCHAIN_AVAILABLE:
-            raise ValueError("Required dependencies not available. Please install chromadb and langchain.")
+        if not LANGCHAIN_AVAILABLE:
+            raise ValueError("Required LangChain components not available. Please check your installation.")
         
         self.api_key = api_key
         self.embeddings = OpenAIEmbeddings(openai_api_key=api_key)
         self.llm = OpenAI(temperature=0.7, openai_api_key=api_key)
         
-        # Initialize ChromaDB client silently
-        try:
-            self.chroma_client = chromadb.Client(Settings(
-                persist_directory="./chroma_db"
-            ))
-        except Exception:
-            # Fallback to simpler client without warning
-            self.chroma_client = chromadb.Client()
-        
-        # Collection name for this session - unique per session
-        self.collection_name = f"doc_qa_{uuid.uuid4().hex[:8]}"
+        # No client initialization needed for FAISS or in-memory store
         self.vectorstore = None
         self.qa_chain = None
+        
+        # Generate a unique ID for this session
+        self.session_id = f"qa_session_{uuid.uuid4().hex[:8]}"
+        
+        # Create index directory if using FAISS
+        if FAISS_AVAILABLE:
+            os.makedirs("./faiss_indexes", exist_ok=True)
         
         # Text splitter for documents
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -188,13 +195,23 @@ class DocumentQARAG:
                 st.error("No valid text content found in uploaded files.")
                 return False
             
-            # Create vector store with ChromaDB
-            self.vectorstore = Chroma.from_documents(
-                documents=all_documents,
-                embedding=self.embeddings,
-                collection_name=self.collection_name,
-                persist_directory="./chroma_db"
-            )
+            # Create vector store based on available backend
+            if FAISS_AVAILABLE:
+                # Create vector store with FAISS
+                self.vectorstore = FAISS.from_documents(
+                    documents=all_documents,
+                    embedding=self.embeddings
+                )
+                
+                # Save the FAISS index
+                faiss_index_path = f"./faiss_indexes/{self.session_id}"
+                self.vectorstore.save_local(faiss_index_path)
+            else:
+                # Fallback to in-memory vector store
+                self.vectorstore = MemoryVectorStore.from_documents(
+                    documents=all_documents,
+                    embedding=self.embeddings
+                )
             
             # Create QA chain
             self.create_qa_chain()
@@ -290,12 +307,15 @@ class DocumentQARAG:
     def cleanup(self):
         """Clean up resources"""
         try:
-            if hasattr(self, 'collection_name') and self.chroma_client:
-                # Delete the collection
-                try:
-                    self.chroma_client.delete_collection(self.collection_name)
-                except:
-                    pass  # Collection might not exist
+            if FAISS_AVAILABLE:
+                # Clean up FAISS index files
+                faiss_index_path = f"./faiss_indexes/{self.session_id}"
+                if os.path.exists(faiss_index_path):
+                    try:
+                        shutil.rmtree(faiss_index_path)
+                    except:
+                        pass  # Ignore errors in cleanup
+            # For in-memory store, no cleanup is needed
         except Exception as e:
             print(f"Cleanup error: {e}")
 
@@ -304,7 +324,7 @@ def create_document_qa_interface():
     st.subheader("📄 Document Q&A")
     
     # Check dependencies silently
-    if not CHROMADB_AVAILABLE or not LANGCHAIN_AVAILABLE:
+    if not LANGCHAIN_AVAILABLE:
         st.error("Required components not available. Please check your installation.")
         return
     
