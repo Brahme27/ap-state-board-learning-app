@@ -17,10 +17,10 @@ class AIAssistant:
             api_key=api_key,
             model="gpt-3.5-turbo",
             temperature=0.7,
-            max_tokens=1500
+            max_tokens=2000
         )
     
-    def generate_topic_explanation(self, topic: str, subject: str, class_level: str) -> str:
+    def generate_topic_explanation(self, topic: str, subject: str, class_level: str, user_preferences: Dict = None) -> str:
         """Generate a comprehensive topic explanation suitable for the student's grade level"""
         
         system_prompt = f"""
@@ -40,6 +40,32 @@ class AIAssistant:
         Class Level: {class_level}
         """
         
+        # Add user preference personalization if available
+        if user_preferences:
+            system_prompt += "\n\n----- IMPORTANT: REQUIRED PERSONALIZATION -----"
+            system_prompt += "\nYou MUST personalize this explanation based on the following student preferences:"
+            
+            if user_preferences.get('activities'):
+                activities = ', '.join(user_preferences['activities'][:3])
+                system_prompt += f"\n- ACTIVITIES: Integrate references, analogies, and examples related to: {activities}"
+            
+            if user_preferences.get('storytelling_styles'):
+                styles = ', '.join(user_preferences['storytelling_styles'][:3])
+                system_prompt += f"\n- STORYTELLING: Structure your explanation using these styles: {styles}"
+            
+            if user_preferences.get('memory_techniques'):
+                techniques = ', '.join(user_preferences['memory_techniques'])
+                system_prompt += f"\n- MEMORY TECHNIQUES: Apply these specific learning techniques throughout: {techniques}"
+            
+            if user_preferences.get('learning_approach'):
+                system_prompt += f"\n- LEARNING APPROACH: Your explanation MUST follow this approach: {user_preferences['learning_approach']}"
+            
+            if user_preferences.get('difficulty_preference'):
+                system_prompt += f"\n- DIFFICULTY STRUCTURE: Present information according to this preference: {user_preferences['difficulty_preference']}"
+            
+            system_prompt += "\n\nFor each section of your explanation, explicitly incorporate these personalization elements."
+            system_prompt += "\nThis personalization is MANDATORY and should be obvious in your explanation."
+        
         human_prompt = f"""
         Please provide a detailed explanation of the topic "{topic}" from {subject} for {class_level} students following the AP State Board syllabus.
         
@@ -52,6 +78,21 @@ class AIAssistant:
         
         Make sure the explanation is engaging, easy to understand, and encourages further learning.
         """
+        
+        # Add a personalization reminder if preferences exist
+        if user_preferences:
+            human_prompt += """
+            
+            CRITICAL: Your explanation MUST be heavily personalized based on the student's preferences. 
+            Make the personalization obvious by:
+            1. Choosing examples that directly relate to their interests
+            2. Using their preferred storytelling styles throughout
+            3. Applying their preferred memory techniques in key points
+            4. Following their preferred learning approach
+            5. Structuring difficulty according to their preference
+            
+            The personalization should be evident in every section of your explanation.
+            """
         
         try:
             messages = [
@@ -200,87 +241,173 @@ class AIAssistant:
         except Exception as e:
             return f"🚫 Sorry, I couldn't analyze your performance right now. Error: {str(e)}"
     
-    def generate_interactive_hint(self, question: Dict, student_input: str, hint_level: int, 
-                                subject: str, class_level: str, topic: str) -> str:
+    def generate_interactive_hint(self, question: Dict[str, Any], student_input: str, hint_level: int, 
+                            subject: str, class_level: str, topic: str) -> str:
         """Generate progressive interactive hints for quiz questions"""
         
+        # Extract question components
         question_text = question.get('question', '')
         correct_answer = question.get('correct_answer', '')
         all_options = question.get('options', [])
         explanation = question.get('explanation', '')
         
+        # Extract key components from the question for analysis
+        question_keywords = []
+        numerical_values = []
+        
+        # Find numbers in the question
+        import re
+        numbers = re.findall(r'\b\d+\.?\d*\b', question_text)
+        if numbers:
+            numerical_values = numbers[:3]  # Take first 3 numbers found
+        
+        # Find key subject-specific terms
+        subject_keywords = {
+            'Mathematics': ['calculate', 'solve', 'find', 'area', 'volume', 'percentage', 'fraction', 'decimal', 'equation', 'formula'],
+            'Science': ['photosynthesis', 'respiration', 'digestion', 'circulation', 'gravity', 'force', 'energy', 'matter', 'chemical', 'physical'],
+            'Environmental Studies': ['pollution', 'conservation', 'ecosystem', 'biodiversity', 'natural resources', 'climate', 'environment', 'sustainable'],
+            'English': ['noun', 'verb', 'adjective', 'sentence', 'paragraph', 'story', 'character', 'setting', 'plot', 'theme'],
+            'Social Studies': ['history', 'geography', 'government', 'democracy', 'civilization', 'culture', 'society', 'economy', 'trade']
+        }
+        
+        relevant_keywords = subject_keywords.get(subject, [])
+        for keyword in relevant_keywords:
+            if keyword.lower() in question_text.lower():
+                question_keywords.append(keyword)
+        
+        # Analyze the options to understand the question type
+        option_analysis = ""
+        if all_options:
+            # Check if it's a calculation question
+            if any(char.isdigit() for option in all_options for char in option):
+                option_analysis = "This appears to be a calculation-based question."
+            # Check if it's a definition question
+            elif any(word in ' '.join(all_options).lower() for word in ['is', 'are', 'means', 'refers']):
+                option_analysis = "This appears to be a definition or concept identification question."
+            # Check if it's a process question
+            elif any(word in ' '.join(all_options).lower() for word in ['first', 'second', 'step', 'process']):
+                option_analysis = "This appears to be about understanding a process or sequence."
+        
         system_prompt = f"""
         You are an expert tutor for {class_level} students studying {subject}, specifically the topic "{topic}".
-        Your goal is to help students solve THIS SPECIFIC QUESTION step by step WITHOUT giving away the full answer immediately.
+        Your goal is to help students solve THIS SPECIFIC QUESTION step by step using progressive hints.
         
-        QUESTION DETAILS:
+        QUESTION ANALYSIS:
         Question: {question_text}
         Options: {all_options}
         Correct Answer: {correct_answer}
         Explanation: {explanation}
+        Keywords Found: {question_keywords}
+        Numbers Found: {numerical_values}
+        Question Type: {option_analysis}
         
-        HINT STRATEGY - Make hints SPECIFIC to this question:
-        - Level 1: Analyze the question, identify key concepts, point out what to look for IN THIS QUESTION
-        - Level 2: Give specific approach/method to solve THIS PARTICULAR QUESTION  
-        - Level 3: Provide step-by-step direction for THIS QUESTION, eliminate wrong options
-        - Level 4+: Give the complete solution with detailed explanation
+        PROGRESSIVE HINT STRATEGY:
+        Level 1: Point out SPECIFIC elements in this question (keywords, numbers, concepts) and what to focus on
+        Level 2: Guide through the thinking process - what method/approach to use for THIS question
+        Level 3: Give more detailed steps, eliminate obviously wrong options, provide partial solution
+        Level 4+: Provide complete solution with step-by-step working
         
         CURRENT CONTEXT:
-        Student's previous input: "{student_input}"
-        Current hint level: {hint_level}
+        Student's response: "{student_input}"
+        Hint Level: {hint_level}
         
-        CRITICAL RULES:
-        1. Generate SPECIFIC hints that directly help solve THIS question, not generic study advice
-        2. Focus on the actual content, numbers, concepts, and data in THIS question
-        3. Point out specific keywords, terms, or information in THIS question
-        4. Guide them through the actual problem-solving process for THIS question
-        5. Use the question content to create targeted, helpful hints
-        6. Be encouraging and use emojis
+        CRITICAL REQUIREMENTS:
+        1. Be SPECIFIC to this question's content - use the actual numbers, terms, and data from the question
+        2. Build on the student's previous response if they provided one
+        3. Make each hint progressively more revealing
+        4. Use encouraging language and emojis
+        5. For calculation questions, show the actual calculation steps
+        6. For concept questions, break down the concept specifically as it applies to this question
         """
         
         if hint_level == 1:
+            # First hint - analyze the question and point out key elements
+            hint_elements = []
+            
+            if numerical_values:
+                hint_elements.append(f"I notice the numbers {', '.join(numerical_values)} in this question")
+            
+            if question_keywords:
+                hint_elements.append(f"The key concept here is about {', '.join(question_keywords)}")
+            
+            # Identify what type of question this is based on question words
+            if any(word in question_text.lower() for word in ['what is', 'which is', 'what does']):
+                hint_elements.append("This is asking you to identify or define something")
+            elif any(word in question_text.lower() for word in ['how', 'calculate', 'find']):
+                hint_elements.append("This requires you to work through a process or calculation")
+            elif any(word in question_text.lower() for word in ['why', 'because', 'reason']):
+                hint_elements.append("This is asking you to explain reasoning or cause-effect")
+            
+            specific_focus = ""
+            if subject == "Mathematics" and numerical_values:
+                specific_focus = f"Focus on what operation you need to perform with these numbers: {', '.join(numerical_values)}"
+            elif subject == "Science" and question_keywords:
+                specific_focus = f"Think about how {question_keywords[0]} works in this context" if question_keywords else ""
+            elif "percentage" in question_text.lower():
+                specific_focus = "This is a percentage problem - think about the formula: (part/whole) × 100"
+            elif "area" in question_text.lower():
+                specific_focus = "This is asking about area - remember the formula depends on the shape"
+            
             human_prompt = f"""
-            This is the FIRST hint for this specific question: "{question_text}"
+            Generate the FIRST hint for this question: "{question_text}"
             
-            Analyze THIS EXACT QUESTION and provide a targeted first hint that:
-            1. Identifies the specific concept being tested in THIS question
-            2. Points out the most important keywords, numbers, or data in THIS question  
-            3. Explains what the student should focus on to solve THIS specific question
-            4. Gives a specific approach or method to start solving THIS question
-            5. Does NOT reveal the answer directly
+            Start with: "👋 Hi! I'm your tutor for this question. Let me help you solve this step by step!
             
-            Start with: "👋 Hi! I'm your tutor for this question.
-
-            My goal: Help you solve this step by step, WITHOUT giving away the full answer immediately!
+            🎯 My goal: Guide you through the solution without giving away the answer immediately.
             
-            How I work: 🔍 I'll give you progressive hints 💭 Wait for your response before the next hint
+            💭 How I work: I'll give you progressive hints and wait for your thoughts before the next hint.
             
-            📝 Guide you through the problem-solving process ✨ Only show the complete solution if you really need it
+            📝 First, let's analyze this question together:
             
-            Your first hint: [Generate a SPECIFIC hint about THIS question's content, keywords, numbers, or approach]"
+            Your first hint should:
+            1. Point out the specific elements: {hint_elements}
+            2. {specific_focus if specific_focus else 'Identify what the question is really asking'}
+            3. Give them a specific starting point or approach
+            4. Ask them what they think about these elements
             
-            Examples of GOOD specific hints:
-            - "Look at the number 25 in the question - this tells us about..."
-            - "The key word 'photosynthesis' in this question means we need to think about..."
-            - "This question is asking you to calculate... focus on the given values of..."
-            - "Notice the question asks 'which of the following' - this means you need to compare..."
-            
-            Make your hint specific to what's actually written in THIS question.
+            Make it engaging and specific to THIS question's content!"
             """
-        else:
+            
+        elif hint_level == 2:
             human_prompt = f"""
-            This is hint level {hint_level} for the question: "{question_text}"
-            Student's previous response: "{student_input}"
+            The student responded: "{student_input}"
             
-            Based on the student's response and hint level {hint_level}, provide the next progressive hint that:
-            1. Responds directly to what the student said
-            2. Builds on previous hints with more specific guidance about THIS question
-            3. If level 2: Give more detailed approach or method for solving THIS specific question
-            4. If level 3: Guide through step-by-step process for THIS question, maybe eliminate some wrong options
-            5. If level 4+: Provide complete solution with detailed explanation of how to solve THIS question
+            Now provide the SECOND progressive hint that:
+            1. Acknowledges their response positively
+            2. Guides them toward the correct method/approach for THIS specific question
+            3. If it's a calculation: show them what formula or operation to use
+            4. If it's a concept: break down the concept as it applies here
+            5. Give them a more specific direction without revealing the answer
+            6. Use the actual content from the question (numbers: {numerical_values}, keywords: {question_keywords})
+            """
             
-            Focus on the specific content and details of THIS question, not general study advice.
-            Use the actual question data to help them solve it.
+        elif hint_level == 3:
+            human_prompt = f"""
+            The student responded: "{student_input}"
+            
+            Provide the THIRD progressive hint that:
+            1. Builds on their understanding so far
+            2. Shows partial working/steps for THIS question
+            3. Eliminates 1-2 obviously wrong options from: {all_options}
+            4. Gives them most of the solution process but lets them complete it
+            5. If it's calculation: show the setup and maybe first step of calculation
+            6. Be very specific to this question's data and context
+            """
+            
+        elif hint_level >= 4:
+            human_prompt = f"""
+            The student has asked for more help. Provide the COMPLETE solution:
+            
+            1. Show the full step-by-step solution for this specific question
+            2. Use the actual numbers and data from the question: {numerical_values}
+            3. Explain WHY the correct answer is: {correct_answer}
+            4. Show all calculation steps if it's a math problem
+            5. Explain the reasoning clearly
+            6. Connect it back to the topic: {topic}
+            7. End with encouragement about understanding the concept
+            
+            The student responded: "{student_input}"
+            Be comprehensive but still encouraging!
             """
         
         try:
@@ -293,24 +420,31 @@ class AIAssistant:
             return response.content.strip()
             
         except Exception as e:
-            # Provide a more specific fallback based on the actual question
+            # Enhanced fallback based on hint level and question content
             if hint_level == 1:
-                # Extract key info from the question for a specific fallback
-                question_keywords = []
-                if any(word in question_text.lower() for word in ['calculate', 'find', 'solve']):
-                    question_keywords.append("calculation")
-                if any(word in question_text.lower() for word in ['what', 'which', 'identify']):
-                    question_keywords.append("identification")
-                if any(char.isdigit() for char in question_text):
-                    question_keywords.append("numerical values")
+                fallback_hint = f"👋 Hi! I'm your tutor for this question.\n\n🎯 Let's look at this question: \"{question_text}\"\n\n"
                 
-                return f"""👋 Hi! I'm your tutor for this question.
-My goal: Help you solve this step by step, WITHOUT giving away the full answer immediately!
-
-🔍 Your first hint: Look carefully at this question: "{question_text[:100]}..." 
-
-I notice this question involves {', '.join(question_keywords) if question_keywords else 'key concepts'}. Focus on identifying what specific information is given and what exactly you need to find. 
-
-What part of this question stands out to you as most important? 🤔"""
+                if numerical_values:
+                    fallback_hint += f"🔢 I notice there are numbers in this question: {', '.join(numerical_values)}. "
+                
+                if question_keywords:
+                    fallback_hint += f"📖 This question is about {', '.join(question_keywords)}. "
+                
+                if "calculate" in question_text.lower() or numerical_values:
+                    fallback_hint += "This looks like a calculation problem. What operation do you think we need to use? 🤔"
+                elif "what is" in question_text.lower():
+                    fallback_hint += "This is asking you to identify something. Look at the options and think about which one best fits. 🤔"
+                else:
+                    fallback_hint += "Think about what this question is really asking. What's the main concept being tested? 🤔"
+                    
+                return fallback_hint
+                
+            elif hint_level == 2:
+                return f"Good thinking! Now let's focus on the key part of this question. Looking at \"{question_text}\", what specific approach or method should we use? Think about the main concept of {topic}. 💡"
+                
+            elif hint_level == 3:
+                wrong_options = [opt for opt in all_options if opt != correct_answer][:2] if all_options else []
+                return f"Let me help you narrow it down! We can eliminate these options: {', '.join(wrong_options)} because they don't fit the question. Now focus on the remaining choices. What do you think? 🎯"
+                
             else:
-                return f"Let me help you with this question! Looking at your response '{student_input}', what specific part of the question would you like me to explain further? 🤔"
+                return f"Here's the complete solution: The correct answer is {correct_answer}. {explanation if explanation else 'This relates to the key concepts of ' + topic + '.'} Now you can see how to approach similar questions! 🌟"
