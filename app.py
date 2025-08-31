@@ -17,6 +17,7 @@ from ai_assistant import AIAssistant
 from quiz_generator import QuizGenerator
 from video_recommender import VideoRecommender
 from student_history import StudentHistory
+from user_preferences import learning_preferences_survey, get_user_preferences, create_user_profile_summary
 
 # Page configuration
 st.set_page_config(
@@ -42,6 +43,8 @@ def initialize_session_state():
         st.session_state.selected_topic = None
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "authentication"
+    if 'survey_data' not in st.session_state:
+        st.session_state.survey_data = {}
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
     if 'quiz_questions' not in st.session_state:
@@ -138,10 +141,23 @@ def authentication_page():
             if student_name.strip() and api_key.strip():
                 st.session_state.student_name = student_name.strip()
                 st.session_state.api_key = api_key.strip()
-                st.session_state.current_page = "class_selection"
+                st.session_state.current_page = "preferences_survey"
                 st.rerun()
             else:
                 st.error("⚠️ Please provide both your name and OpenAI API key.")
+
+def preferences_survey_page():
+    """Learning preferences survey page"""
+    st.title(f"👋 Welcome {st.session_state.student_name}!")
+    st.subheader("🎯 Let's Personalize Your Learning Experience")
+    
+    learning_preferences_survey()
+    
+    # Add a "Continue" button if preferences have been saved
+    if st.session_state.get('survey_data'):
+        if st.button("▶️ Continue to Class Selection", type="primary"):
+            st.session_state.current_page = "class_selection"
+            st.rerun()
 
 def class_selection_page():
     """Class selection page"""
@@ -311,17 +327,29 @@ def topic_explanation_section():
     
     # Handle explanation generation
     if generate_explanation:
-        with st.spinner("🤖 AI is preparing your lesson..."):
+        with st.spinner("🤖 AI is preparing your personalized lesson..."):
             ai_assistant = AIAssistant(st.session_state.api_key)
+            
+            # Get user preferences if available
+            user_preferences = get_user_preferences()
+            
+            # Show that personalization is being applied
+            if user_preferences:
+                st.info("🎯 Applying your learning preferences to create a personalized explanation...")
             
             explanation = ai_assistant.generate_topic_explanation(
                 topic=st.session_state.selected_topic,
                 subject=st.session_state.selected_subject,
-                class_level=st.session_state.selected_class
+                class_level=st.session_state.selected_class,
+                user_preferences=user_preferences
             )
             
             # Store explanation in session state
             st.session_state.current_explanation = explanation
+            
+            # Show personalization success message
+            if user_preferences:
+                st.success("✅ Explanation personalized based on your learning preferences!")
             
             # Record this study session
             st.session_state.student_history.add_topic_studied(
@@ -1374,6 +1402,8 @@ def main():
     # Display appropriate page based on current state
     if st.session_state.current_page == "authentication":
         authentication_page()
+    elif st.session_state.current_page == "preferences_survey":
+        preferences_survey_page()
     elif st.session_state.current_page == "class_selection":
         class_selection_page()
     elif st.session_state.current_page == "subject_selection":
