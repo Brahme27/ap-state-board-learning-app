@@ -8,6 +8,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.schema import HumanMessage, SystemMessage
 import openai
 from typing import Dict, List, Any
+from curriculum_data import get_curriculum_data
 
 class AIAssistant:
     def __init__(self, api_key: str):
@@ -17,27 +18,115 @@ class AIAssistant:
             api_key=api_key,
             model="gpt-3.5-turbo",
             temperature=0.7,
-            max_tokens=2000
+            max_tokens=4000  # Increased for comprehensive content
         )
+        self.curriculum_data = get_curriculum_data()
+    
+    def get_curriculum_context(self, topic: str, subject: str, class_level: str) -> str:
+        """Get relevant curriculum context for the topic"""
+        try:
+            curriculum = self.curriculum_data.get(class_level, {})
+            subject_data = curriculum.get(subject, {})
+            
+            # Find the chapter containing this topic
+            relevant_context = ""
+            for chapter, topics in subject_data.items():
+                if topic in topics:
+                    relevant_context += f"Chapter: {chapter}\n"
+                    relevant_context += f"Related topics in this chapter: {', '.join(topics)}\n"
+                    break
+            
+            return relevant_context
+        except Exception:
+            return ""
     
     def generate_topic_explanation(self, topic: str, subject: str, class_level: str, user_preferences: Dict = None) -> str:
         """Generate a comprehensive topic explanation suitable for the student's grade level"""
         
-        system_prompt = f"""
-        You are an expert teacher for AP State Board curriculum. Generate a clear, engaging, and age-appropriate explanation for {class_level} students.
+        # Get curriculum context
+        curriculum_context = self.get_curriculum_context(topic, subject, class_level)
         
-        Guidelines:
-        1. Use simple, clear language appropriate for {class_level} students
-        2. Include real-world examples and analogies
-        3. Break down complex concepts into smaller, digestible parts
-        4. Use emojis and engaging formatting to make it interesting
-        5. Include practical applications where relevant
-        6. Keep explanations comprehensive but not overwhelming
-        7. Focus on building conceptual understanding
+        # Mathematics-specific formula guidelines
+        math_formula_guidelines = ""
+        if subject.lower() in ['mathematics', 'math', 'maths']:
+            math_formula_guidelines = """
+        
+        MATHEMATICS SPECIFIC REQUIREMENTS:
+        📐 FORMULAS AND EQUATIONS - CRITICAL LaTeX FORMATTING:
+        - Include ALL relevant formulas related to """ + topic + """
+        - MANDATORY: Use LaTeX notation for ALL mathematical formulas and equations
+        - Format: Use $$formula$$ for display equations and $formula$ for inline math
+        - Example: $$a^2 + b^2 = c^2$$ for Pythagorean theorem
+        - Example: The area is $A = \\pi r^2$ for inline formulas
+        - Use proper LaTeX symbols: \\frac{a}{b}, \\sqrt{x}, \\sum_{i=1}^{n}, \\int, \\alpha, \\beta, etc.
+        - Include step-by-step derivations in LaTeX format
+        - Show alternative forms of formulas in LaTeX
+        - Include units and dimensions in proper mathematical notation
+        
+        📊 MATHEMATICAL CONTENT STRUCTURE:
+        - Definition and basic concept with mathematical foundation
+        - ALL formulas MUST be in LaTeX format for proper rendering
+        - Derivation or proof with LaTeX equations (age-appropriate for """ + class_level + """)
+        - Multiple worked examples with LaTeX-formatted calculations
+        - Common mistakes and how to avoid them
+        - Practice problems hints and solving strategies
+        - Real-world applications with detailed calculations
+        - Geometric interpretations and visual representations where applicable
+        """
+        
+        # Curriculum-specific guidelines
+        curriculum_guidelines = ""
+        if curriculum_context:
+            curriculum_guidelines = f"""
+        
+        AP STATE BOARD CURRICULUM CONTEXT:
+        {curriculum_context}
+        
+        CURRICULUM ALIGNMENT REQUIREMENTS:
+        - Strictly follow AP State Board syllabus standards for {class_level}
+        - Reference content as it appears in AP State Board textbooks
+        - Use terminology and notation consistent with AP State Board materials
+        - Include all topics and subtopics as per the curriculum structure
+        - Ensure age-appropriate depth matching the class level expectations
+        """
+        
+        system_prompt = f"""
+        You are an expert mathematics teacher for AP State Board curriculum with deep knowledge of official textbook content. 
+        Generate a COMPREHENSIVE, DETAILED explanation for {class_level} students that matches the depth and quality expected from AP State Board textbooks.
+        
+        CONTENT DEPTH REQUIREMENTS:
+        1. Provide extensive, thorough explanations (minimum 1500-2000 words)
+        2. Use multiple detailed examples and step-by-step solutions
+        3. Include comprehensive background and context
+        4. Break down every concept into multiple sub-concepts with full explanations
+        5. Provide detailed explanations for each step and reasoning
+        6. Include multiple perspectives and approaches to the same concept
+        7. Add detailed practice guidance and study tips
+        8. Reference official AP State Board curriculum standards
+        
+        GENERAL GUIDELINES:
+        1. Use clear, pedagogical language appropriate for {class_level} students
+        2. Include extensive real-world examples and detailed analogies
+        3. Break down complex concepts into multiple digestible parts with full explanations
+        4. Use emojis and engaging formatting throughout for better readability
+        5. Include practical applications with detailed explanations and calculations
+        6. Focus on building deep conceptual understanding as per AP State Board methodology
+        7. Provide comprehensive coverage as found in official AP State Board textbooks
+        8. Include historical context and development of concepts where relevant
+        9. Add tips for better understanding and memory retention
+        10. Include common misconceptions and clarifications
+        11. Connect to previous and upcoming topics in the curriculum
+        
+        {math_formula_guidelines}
+        {curriculum_guidelines}
         
         Subject: {subject}
         Topic: {topic}
         Class Level: {class_level}
+        
+        IMPORTANT: Your explanation should be as comprehensive as a textbook chapter, with multiple sections, 
+        detailed explanations, extensive examples, and thorough coverage of all aspects of the topic as per 
+        AP State Board standards and expectations.
         """
         
         # Add user preference personalization if available
@@ -67,16 +156,61 @@ class AIAssistant:
             system_prompt += "\nThis personalization is MANDATORY and should be obvious in your explanation."
         
         human_prompt = f"""
-        Please provide a detailed explanation of the topic "{topic}" from {subject} for {class_level} students following the AP State Board syllabus.
+        Please provide a DETAILED, COMPREHENSIVE explanation of the topic "{topic}" from {subject} for {class_level} students following the AP State Board syllabus. 
         
-        Structure your explanation as follows:
-        1. 🎯 **Introduction** - What is this topic about?
-        2. 🔍 **Key Concepts** - Main ideas broken down simply
-        3. 🌟 **Real-world Examples** - How this applies in daily life
-        4. 📝 **Important Points to Remember** - Key takeaways
-        5. 🚀 **Fun Facts** (if applicable) - Interesting related information
+        This should be a complete learning resource similar to an official AP State Board textbook chapter with extensive detail and examples.
         
-        Make sure the explanation is engaging, easy to understand, and encourages further learning.
+        {f"CURRICULUM CONTEXT: {curriculum_context}" if curriculum_context else ""}
+        
+        MANDATORY STRUCTURE FOR ALL SUBJECTS:
+        1. 🎯 **Introduction & Overview** (Detailed introduction with context, importance, and curriculum placement)
+        2. 🔍 **Fundamental Concepts** (Break down ALL key concepts with detailed explanations and definitions)
+        3. 📐 **Formulas & Mathematical Content** (For math topics: ALL relevant formulas in LaTeX format $$formula$$ with derivations, notations, and explanations)
+        4. 📚 **Detailed Theory & Explanations** (Comprehensive theoretical background as per AP State Board textbooks)
+        5. 🔢 **Step-by-Step Examples** (Multiple detailed worked examples with complete solutions and explanations)
+        6. 🌟 **Real-world Applications** (Extensive practical applications with detailed explanations and relevance)
+        7. 💡 **Problem-Solving Strategies** (Detailed approaches, methodologies, and techniques)
+        8. 📝 **Important Points & Key Takeaways** (Comprehensive summary of all critical points)
+        9. 🎯 **Study Tips & Memory Aids** (Detailed learning strategies, mnemonics, and retention techniques)
+        10. 🚀 **Advanced Concepts & Extensions** (Additional related topics and deeper insights for curious learners)
+       
+        🔴 CRITICAL LATEX FORMATTING REQUIREMENT:
+        For ANY mathematical content, you MUST use proper LaTeX notation:
+        - Display equations: $$x = \\frac{{-b \\pm \\sqrt{{b^2 - 4ac}}}}{{2a}}$$
+        - Inline math: The area is $A = \\pi r^2$ square units
+        - Fractions: $$\\frac{{3}}{{4}} + \\frac{{1}}{{2}} = \\frac{{5}}{{4}}$$
+        - Powers: $$x^2 + y^2 = z^2$$
+        - Roots: $$\\sqrt{{16}} = 4$$
+        - Greek letters: $$\\alpha + \\beta = \\gamma$$
+        This is MANDATORY for proper rendering in the application!
+        
+        SPECIFIC REQUIREMENTS FOR MATHEMATICS:
+        - CRITICAL: Use LaTeX formatting for ALL mathematical formulas and equations
+        - Format all formulas as $$formula$$ for display equations and $formula$ for inline math
+        - Include ALL relevant formulas with proper LaTeX mathematical notation
+        - Show complete derivations step-by-step with LaTeX formatting and logical reasoning
+        - Provide multiple worked examples with LaTeX-formatted calculations and different complexity levels
+        - Include alternative solution methods with proper LaTeX notation where applicable
+        - Show dimensional analysis and unit considerations in mathematical format
+        - Include graphical representations, diagrams, and visual aids descriptions where relevant
+        - Provide geometric interpretations and spatial understanding if applicable
+        - Include calculator usage tips and mental math strategies where appropriate
+        - Examples: Use $$E = mc^2$$, $$\\\\frac{{dy}}{{dx}}$$, $$\\\\int_{{a}}^{{b}} f(x)dx$$, etc.
+        
+        CONTENT REQUIREMENTS:
+        - Minimum 1500-2000 words of comprehensive, detailed content
+        - Multiple detailed examples and case studies with complete LaTeX-formatted solutions
+        - Extensive explanations for each concept, formula, and procedure with proper math formatting
+        - Clear connections between different aspects of the topic
+        - Comprehensive coverage matching official AP State Board textbook depth and style
+        - Include prerequisite knowledge review and foundation building
+        - Provide connections to other related curriculum topics
+        - Use official AP State Board terminology and LaTeX notation standards
+        - Include assessment criteria and learning objectives alignment
+        
+        Make sure the explanation is thorough, engaging, educationally complete, follows AP State Board standards, 
+        and provides students with a comprehensive understanding that could serve as their primary learning resource 
+        for this topic, equivalent to or better than their textbook coverage.
         """
         
         # Add a personalization reminder if preferences exist
