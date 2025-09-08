@@ -362,7 +362,12 @@ def topic_explanation_section():
     # Display explanation if it exists
     if st.session_state.current_explanation:
         st.markdown("### 📚 Lesson Content")
-        st.markdown(st.session_state.current_explanation)
+        
+        # Add LaTeX rendering info
+        st.info("💡 **Math Formulas**: This content includes properly formatted mathematical equations using LaTeX notation for clear visualization.")
+        
+        # Display the explanation with LaTeX support
+        st.markdown(st.session_state.current_explanation, unsafe_allow_html=True)
     
     # Handle Q&A popup
     if open_qa_popup:
