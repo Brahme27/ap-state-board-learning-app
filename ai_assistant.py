@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import HumanMessage, SystemMessage
 import openai
+import re
 from typing import Dict, List, Any
 from curriculum_data import get_curriculum_data
 
@@ -46,10 +47,10 @@ class AIAssistant:
         # Get curriculum context
         curriculum_context = self.get_curriculum_context(topic, subject, class_level)
         
-        # Mathematics-specific formula guidelines
-        math_formula_guidelines = ""
+        # Mathematics and Physical Science-specific formula guidelines
+        formula_guidelines = ""
         if subject.lower() in ['mathematics', 'math', 'maths']:
-            math_formula_guidelines = """
+            formula_guidelines = """
         
         MATHEMATICS SPECIFIC REQUIREMENTS:
         📐 FORMULAS AND EQUATIONS - CRITICAL LaTeX FORMATTING:
@@ -73,6 +74,36 @@ class AIAssistant:
         - Real-world applications with detailed calculations
         - Geometric interpretations and visual representations where applicable
         """
+        elif subject.lower() in ['physical science', 'physics', 'science', 'physical sciences']:
+            formula_guidelines = """
+        
+        PHYSICAL SCIENCE SPECIFIC REQUIREMENTS:
+        🔬 FORMULAS AND EQUATIONS - CRITICAL LaTeX FORMATTING:
+        - Include ALL relevant formulas related to """ + topic + """
+        - MANDATORY: Use LaTeX notation for ALL scientific formulas, equations, and units
+        - Format: Use $$formula$$ for display equations and $formula$ for inline math
+        - Example: $$F = ma$$ for Newton's second law
+        - Example: The force is $F = \\frac{mv^2}{r}$ for centripetal force
+        - Example: $$E = mc^2$$ for mass-energy equivalence
+        - Example: $$V = IR$$ for Ohm's law
+        - Example: $$PV = nRT$$ for ideal gas law
+        - Use proper LaTeX symbols: \\frac{a}{b}, \\sqrt{x}, \\Delta, \\theta, \\omega, \\lambda, etc.
+        - Include step-by-step derivations in LaTeX format
+        - Show alternative forms of formulas in LaTeX
+        - Include units and dimensions in proper mathematical notation: $m/s^2$, $kg \\cdot m/s^2$, $J$, $W$, etc.
+        
+        🧪 PHYSICAL SCIENCE CONTENT STRUCTURE:
+        - Definition and basic concept with scientific foundation
+        - ALL formulas MUST be in LaTeX format for proper rendering
+        - Scientific principles and laws with LaTeX equations (age-appropriate for """ + class_level + """)
+        - Multiple worked examples with LaTeX-formatted calculations and unit conversions
+        - Common mistakes in calculations and unit handling
+        - Problem-solving strategies for physics calculations
+        - Real-world applications with detailed scientific calculations
+        - Laboratory observations and experimental data interpretation
+        - Graphical representations and data analysis where applicable
+        - Safety considerations and practical applications
+        """
         
         # Curriculum-specific guidelines
         curriculum_guidelines = ""
@@ -91,7 +122,7 @@ class AIAssistant:
         """
         
         system_prompt = f"""
-        You are an expert mathematics teacher for AP State Board curriculum with deep knowledge of official textbook content. 
+        You are an expert teacher for AP State Board curriculum with deep knowledge of official textbook content. 
         Generate a COMPREHENSIVE, DETAILED explanation for {class_level} students that matches the depth and quality expected from AP State Board textbooks.
         
         CONTENT DEPTH REQUIREMENTS:
@@ -117,7 +148,7 @@ class AIAssistant:
         10. Include common misconceptions and clarifications
         11. Connect to previous and upcoming topics in the curriculum
         
-        {math_formula_guidelines}
+        {formula_guidelines}
         {curriculum_guidelines}
         
         Subject: {subject}
@@ -165,7 +196,7 @@ class AIAssistant:
         MANDATORY STRUCTURE FOR ALL SUBJECTS:
         1. 🎯 **Introduction & Overview** (Detailed introduction with context, importance, and curriculum placement)
         2. 🔍 **Fundamental Concepts** (Break down ALL key concepts with detailed explanations and definitions)
-        3. 📐 **Formulas & Mathematical Content** (For math topics: ALL relevant formulas in LaTeX format $$formula$$ with derivations, notations, and explanations)
+        3. 📐 **Formulas & Mathematical Content** (For math/science topics: ALL relevant formulas in LaTeX format $$formula$$ with derivations, notations, and explanations)
         4. 📚 **Detailed Theory & Explanations** (Comprehensive theoretical background as per AP State Board textbooks)
         5. 🔢 **Step-by-Step Examples** (Multiple detailed worked examples with complete solutions and explanations)
         6. 🌟 **Real-world Applications** (Extensive practical applications with detailed explanations and relevance)
@@ -175,13 +206,15 @@ class AIAssistant:
         10. 🚀 **Advanced Concepts & Extensions** (Additional related topics and deeper insights for curious learners)
        
         🔴 CRITICAL LATEX FORMATTING REQUIREMENT:
-        For ANY mathematical content, you MUST use proper LaTeX notation:
+        For ANY mathematical or scientific content, you MUST use proper LaTeX notation:
         - Display equations: $$x = \\frac{{-b \\pm \\sqrt{{b^2 - 4ac}}}}{{2a}}$$
         - Inline math: The area is $A = \\pi r^2$ square units
+        - Physics formulas: $$F = ma$$, $$E = mc^2$$, $$V = IR$$
         - Fractions: $$\\frac{{3}}{{4}} + \\frac{{1}}{{2}} = \\frac{{5}}{{4}}$$
-        - Powers: $$x^2 + y^2 = z^2$$
-        - Roots: $$\\sqrt{{16}} = 4$$
-        - Greek letters: $$\\alpha + \\beta = \\gamma$$
+        - Powers: $$x^2 + y^2 = z^2$$, $$v^2 = u^2 + 2as$$
+        - Roots: $$\\sqrt{{16}} = 4$$, $$v = \\sqrt{{2gh}}$$
+        - Greek letters: $$\\alpha + \\beta = \\gamma$$, $$\\theta$$, $$\\omega$$, $$\\lambda$$
+        - Units: $m/s^2$, $kg \\cdot m/s^2$, $J$, $W$, $\\Omega$
         This is MANDATORY for proper rendering in the application!
         
         SPECIFIC REQUIREMENTS FOR MATHEMATICS:
@@ -196,6 +229,19 @@ class AIAssistant:
         - Provide geometric interpretations and spatial understanding if applicable
         - Include calculator usage tips and mental math strategies where appropriate
         - Examples: Use $$E = mc^2$$, $$\\\\frac{{dy}}{{dx}}$$, $$\\\\int_{{a}}^{{b}} f(x)dx$$, etc.
+        
+        SPECIFIC REQUIREMENTS FOR PHYSICAL SCIENCE:
+        - CRITICAL: Use LaTeX formatting for ALL scientific formulas, equations, and units
+        - Format all formulas as $$formula$$ for display equations and $formula$ for inline math
+        - Include ALL relevant physics formulas with proper LaTeX scientific notation
+        - Show complete derivations step-by-step with LaTeX formatting and scientific reasoning
+        - Provide multiple worked examples with LaTeX-formatted calculations and unit conversions
+        - Include proper unit analysis using LaTeX notation: $kg$, $m/s^2$, $N$, $J$, $W$, etc.
+        - Show force diagrams, circuit diagrams, and experimental setups descriptions
+        - Include vector notation using LaTeX: $$\\vec{{F}}$$, $$\\vec{{v}}$$, $$\\vec{{a}}$$
+        - Provide laboratory safety considerations and measurement techniques
+        - Include data analysis and graphical interpretation methods
+        - Examples: Use $$F = ma$$, $$P = \\frac{{W}}{{t}}$$, $$\\rho = \\frac{{m}}{{V}}$$, $$f = \\frac{{1}}{{T}}$$, etc.
         
         CONTENT REQUIREMENTS:
         - Minimum 1500-2000 words of comprehensive, detailed content
@@ -256,6 +302,9 @@ class AIAssistant:
         6. Use emojis to make responses engaging
         7. Encourage further questions and curiosity
         8. If you don't know something, admit it and suggest how to find the answer
+        9. CRITICAL: For Mathematics and Physical Science topics, ALWAYS use LaTeX formatting for formulas
+        10. Use $$formula$$ for display equations and $formula$ for inline mathematical expressions
+        11. Include proper units in LaTeX format for science: $m/s^2$, $kg$, $N$, $J$, etc.
         """
         
         human_prompt = f"""
@@ -266,6 +315,11 @@ class AIAssistant:
         Class: {class_level}
         
         Please provide a helpful, encouraging response that addresses the student's question while staying relevant to their current learning context.
+        
+        IMPORTANT: If your response includes mathematical formulas or scientific equations, you MUST use LaTeX formatting:
+        - Use $$formula$$ for display equations (e.g., $$F = ma$$)
+        - Use $formula$ for inline math (e.g., The force is $F = 10N$)
+        - Include proper units using LaTeX notation
         """
         
         try:
@@ -452,6 +506,10 @@ class AIAssistant:
         4. Use encouraging language and emojis
         5. For calculation questions, show the actual calculation steps
         6. For concept questions, break down the concept specifically as it applies to this question
+        7. LATEX FORMATTING: For Mathematics and Physical Science, ALWAYS use LaTeX for formulas:
+           - Use $$formula$$ for display equations (e.g., $$F = ma$$)
+           - Use $formula$ for inline math (e.g., The area is $A = \\pi r^2$)
+           - Include proper units in LaTeX: $m/s^2$, $kg$, $N$, $J$, etc.
         """
         
         if hint_level == 1:
@@ -524,8 +582,9 @@ class AIAssistant:
             2. Shows partial working/steps for THIS question
             3. Eliminates 1-2 obviously wrong options from: {all_options}
             4. Gives them most of the solution process but lets them complete it
-            5. If it's calculation: show the setup and maybe first step of calculation
+            5. If it's calculation: show the setup and maybe first step of calculation using LaTeX formatting
             6. Be very specific to this question's data and context
+            7. Use LaTeX notation for any mathematical expressions: $$formula$$ or $formula$
             """
             
         elif hint_level >= 4:
@@ -535,10 +594,11 @@ class AIAssistant:
             1. Show the full step-by-step solution for this specific question
             2. Use the actual numbers and data from the question: {numerical_values}
             3. Explain WHY the correct answer is: {correct_answer}
-            4. Show all calculation steps if it's a math problem
+            4. Show all calculation steps if it's a math problem using LaTeX formatting
             5. Explain the reasoning clearly
             6. Connect it back to the topic: {topic}
             7. End with encouragement about understanding the concept
+            8. Use LaTeX notation for all mathematical expressions: $$formula$$ for display, $formula$ for inline
             
             The student responded: "{student_input}"
             Be comprehensive but still encouraging!
