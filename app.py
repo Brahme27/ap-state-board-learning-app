@@ -27,6 +27,60 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Configure MathJax for LaTeX rendering
+st.markdown("""
+<script>
+    window.MathJax = {
+        tex: {
+            inlineMath: [['$', '$']],
+            displayMath: [['$$', '$$']],
+            processEscapes: true,
+            processEnvironments: true,
+            packages: ['base', 'ams', 'noerrors', 'noundefined', 'autoload', 'physics'],
+            macros: {
+                // Improved fraction macro
+                "frac": ["\\frac{#1}{#2}", 2],
+                // Vector notation
+                "vec": ["\\boldsymbol{\\mathbf{#1}}", 1],
+                // Derivative
+                "dv": ["\\frac{d#1}{d#2}", 2],
+                // Partial derivative
+                "pdv": ["\\frac{\\partial #1}{\\partial #2}", 2]
+            }
+        },
+        options: {
+            ignoreHtmlClass: 'tex2jax_ignore',
+            processHtmlClass: 'tex2jax_process',
+            renderActions: {
+                findScript: [10, function (doc) {
+                    document.querySelectorAll('script[type^="math/tex"]').forEach(function(node) {
+                        var display = !!node.type.match(/; *mode=display/);
+                        var math = new doc.options.MathItem(node.textContent, doc.inputJax[0], display);
+                        var text = document.createTextNode('');
+                        node.parentNode.replaceChild(text, node);
+                        math.start = {node: text, delim: '', n: 0};
+                        math.end = {node: text, delim: '', n: 0};
+                        doc.math.push(math);
+                    });
+                }, '']
+            }
+        },
+        svg: {
+            fontCache: 'global',
+            scale: 1.1,
+            minScale: 0.5
+        },
+        loader: {
+            load: ['[tex]/physics']
+        },
+        startup: {
+            typeset: true
+        }
+    };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+""", unsafe_allow_html=True)
+
 def initialize_session_state():
     """Initialize session state variables"""
     if 'api_key' not in st.session_state:
@@ -333,10 +387,19 @@ def topic_explanation_section():
             # Get user preferences if available
             user_preferences = get_user_preferences()
             
-            # Show that personalization is being applied
+            # Check if current subject requires LaTeX formatting
+            is_math_science = st.session_state.selected_subject.lower() in [
+                'mathematics', 'math', 'maths', 
+                'physical science', 'physics', 'science', 'physical sciences'
+            ]
+            
+            # Show that personalization and LaTeX formatting are being applied
             if user_preferences:
                 st.info("🎯 Applying your learning preferences to create a personalized explanation...")
+            if is_math_science:
+                st.info("📐 Enabling LaTeX formatting for mathematical and scientific notation...")
             
+            # Generate the explanation
             explanation = ai_assistant.generate_topic_explanation(
                 topic=st.session_state.selected_topic,
                 subject=st.session_state.selected_subject,
@@ -344,12 +407,48 @@ def topic_explanation_section():
                 user_preferences=user_preferences
             )
             
+            if is_math_science:
+                # Add LaTeX formatting guide and validation section
+                latex_guide = """
+### 📐 Mathematical & Scientific Notation Guide
+
+This lesson uses LaTeX formatting for precise mathematical and scientific notation:
+
+- **Display Equations**: Centered, larger formulas use double dollar signs:
+  $$formula$$
+
+- **Inline Math**: Mathematical expressions within text use single dollar signs:
+  $formula$
+
+- **Units & Dimensions**: All units are properly formatted:
+  - $m/s^2$ for acceleration
+  - $kg$ for mass
+  - $N$ for force
+  - $J$ for energy
+  - $W$ for power
+
+- **Common Notation**:
+  - Fractions: $$\\frac{numerator}{denominator}$$
+  - Powers: $x^2$, $y^3$
+  - Square roots: $$\\sqrt{x}$$
+  - Greek letters: $\\alpha$, $\\beta$, $\\theta$
+  - Vectors: $$\\vec{F}$$
+  - Derivatives: $$\\frac{d}{dx}$$
+  - Integrals: $$\\int_{a}^{b}$$
+
+---
+"""
+                # Add the LaTeX guide after the main content
+                explanation = f"{explanation}\n\n{latex_guide}"
+            
             # Store explanation in session state
             st.session_state.current_explanation = explanation
             
-            # Show personalization success message
+            # Show success messages
             if user_preferences:
                 st.success("✅ Explanation personalized based on your learning preferences!")
+            if is_math_science:
+                st.success("📐 LaTeX formatting enabled for mathematical and scientific notation!")
             
             # Record this study session
             st.session_state.student_history.add_topic_studied(
@@ -363,11 +462,124 @@ def topic_explanation_section():
     if st.session_state.current_explanation:
         st.markdown("### 📚 Lesson Content")
         
-        # Add LaTeX rendering info
-        st.info("💡 **Math Formulas**: This content includes properly formatted mathematical equations using LaTeX notation for clear visualization.")
+        # Check if current subject requires LaTeX formatting
+        is_math_science = st.session_state.selected_subject.lower() in [
+            'mathematics', 'math', 'maths', 
+            'physical science', 'physics', 'science', 'physical sciences'
+        ]
         
-        # Display the explanation with LaTeX support
-        st.markdown(st.session_state.current_explanation, unsafe_allow_html=True)
+        if is_math_science:
+            # Add enhanced LaTeX styling
+            st.markdown("""
+            <style>
+                /* Enhanced LaTeX/MathJax styling */
+                .math-content {
+                    background-color: #f8f9fa;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 10px 0;
+                }
+                
+                /* Display equations */
+                .katex-display {
+                    margin: 1.5em 0 !important;
+                    padding: 10px !important;
+                    background-color: #f0f8ff !important;
+                    border-radius: 8px !important;
+                    border-left: 4px solid #0066cc !important;
+                    overflow-x: auto !important;
+                }
+                
+                /* Enhanced fraction display */
+                .katex-display .mfrac {
+                    margin: 0 0.2em !important;
+                }
+                
+                .katex-display .mfrac .frac-line {
+                    border-color: #0066cc !important;
+                }
+                
+                .katex-display .mfrac .mspace {
+                    margin-top: 0.1em !important;
+                    margin-bottom: 0.1em !important;
+                }
+                
+                /* Better spacing for numerators and denominators */
+                .katex .mfrac .mspace {
+                    margin-top: 0.1em !important;
+                    margin-bottom: 0.1em !important;
+                }
+                
+                /* Inline math */
+                .katex {
+                    font-size: 1.1em !important;
+                    color: #0066cc !important;
+                }
+                
+                /* Better fraction sizing for inline math */
+                .katex .mfrac {
+                    vertical-align: -0.5em !important;
+                }
+                
+                /* Improved fraction line */
+                .katex .frac-line {
+                    min-height: 1px !important;
+                    border-bottom-width: 1px !important;
+                }
+                
+                /* Step-by-step solutions */
+                .math-step {
+                    background-color: #e9ecef;
+                    padding: 10px;
+                    margin: 5px 0;
+                    border-radius: 5px;
+                    border-left: 3px solid #6c757d;
+                }
+                
+                /* Scientific units */
+                .math-units {
+                    color: #28a745;
+                    font-style: italic;
+                }
+                
+                /* Important formulas */
+                .important-formula {
+                    background-color: #fff3cd;
+                    padding: 15px;
+                    margin: 10px 0;
+                    border-radius: 8px;
+                    border-left: 4px solid #ffc107;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # Add LaTeX rendering info with examples
+            st.info("""
+            💡 **Mathematical & Scientific Notation**:
+            - Display equations are centered and boxed (e.g., $$F = ma$$)
+            - Inline math is highlighted (e.g., $E = mc^2$)
+            - Units are properly formatted (e.g., $m/s^2$, $kg$)
+            - Step-by-step solutions are clearly structured
+            """)
+        
+        # Create a container for the content with proper styling
+        with st.container():
+            if is_math_science:
+                st.markdown('<div class="math-content">', unsafe_allow_html=True)
+                st.markdown(st.session_state.current_explanation, unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Force MathJax to re-render
+                st.markdown("""
+                <script>
+                    if (window.MathJax) {
+                        window.MathJax.typesetPromise && window.MathJax.typesetPromise();
+                    }
+                </script>
+                """, unsafe_allow_html=True)
+            else:
+                # Standard rendering for non-math subjects
+                st.markdown(st.session_state.current_explanation, unsafe_allow_html=True)
     
     # Handle Q&A popup
     if open_qa_popup:
