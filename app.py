@@ -19,6 +19,13 @@ from video_recommender import VideoRecommender
 from student_history import StudentHistory
 from user_preferences import learning_preferences_survey, get_user_preferences, create_user_profile_summary
 
+# Import OCR functionality for writing quiz
+try:
+    from OCRapp import ExamAssistant
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
 # Page configuration
 st.set_page_config(
     page_title="🎓 AI Learning Assistant",
@@ -83,6 +90,8 @@ st.markdown("""
 
 def initialize_session_state():
     """Initialize session state variables"""
+    
+    # Authentication and user data
     if 'api_key' not in st.session_state:
         st.session_state.api_key = ""
     if 'student_name' not in st.session_state:
@@ -99,18 +108,24 @@ def initialize_session_state():
         st.session_state.current_page = "authentication"
     if 'survey_data' not in st.session_state:
         st.session_state.survey_data = {}
+    
+    # Chat and interaction
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
+    if 'popup_chat_history' not in st.session_state:
+        st.session_state.popup_chat_history = []
+    if 'current_explanation' not in st.session_state:
+        st.session_state.current_explanation = None
+    
+    # Quiz system
     if 'quiz_questions' not in st.session_state:
         st.session_state.quiz_questions = []
     if 'quiz_score' not in st.session_state:
         st.session_state.quiz_score = 0
     if 'current_question_index' not in st.session_state:
         st.session_state.current_question_index = 0
-    if 'student_history' not in st.session_state:
-        st.session_state.student_history = StudentHistory()
     
-    # Additional session state for quiz functionality
+    # Continuous adaptive quiz
     if 'continuous_quiz_active' not in st.session_state:
         st.session_state.continuous_quiz_active = False
     if 'continuous_quiz_difficulty' not in st.session_state:
@@ -135,7 +150,7 @@ def initialize_session_state():
     if 'last_selected_answer' not in st.session_state:
         st.session_state.last_selected_answer = None
     
-    # Final quiz session state
+    # Final quiz system
     if 'final_quiz_active' not in st.session_state:
         st.session_state.final_quiz_active = False
     if 'final_quiz_questions' not in st.session_state:
@@ -149,17 +164,9 @@ def initialize_session_state():
     if 'final_quiz_detailed_results' not in st.session_state:
         st.session_state.final_quiz_detailed_results = []
     
-    # Popup Q&A session state
+    # Popup and interaction states
     if 'show_qa_popup' not in st.session_state:
         st.session_state.show_qa_popup = False
-    if 'popup_chat_history' not in st.session_state:
-        st.session_state.popup_chat_history = []
-    
-    # Topic explanation session state
-    if 'current_explanation' not in st.session_state:
-        st.session_state.current_explanation = None
-    
-    # Hint system session state
     if 'show_hint_popup' not in st.session_state:
         st.session_state.show_hint_popup = False
     if 'hint_chat_history' not in st.session_state:
@@ -168,6 +175,38 @@ def initialize_session_state():
         st.session_state.current_hint_question = None
     if 'hint_level' not in st.session_state:
         st.session_state.hint_level = 0
+    
+    # Writing quiz system
+    if 'writing_quiz_active' not in st.session_state:
+        st.session_state.writing_quiz_active = False
+    if 'writing_quiz_question' not in st.session_state:
+        st.session_state.writing_quiz_question = None
+    if 'writing_quiz_marks' not in st.session_state:
+        st.session_state.writing_quiz_marks = 2
+    if 'writing_quiz_evaluations' not in st.session_state:
+        st.session_state.writing_quiz_evaluations = []
+    
+    # Final writing quiz system
+    if 'final_writing_quiz_active' not in st.session_state:
+        st.session_state.final_writing_quiz_active = False
+    if 'final_writing_quiz_questions' not in st.session_state:
+        st.session_state.final_writing_quiz_questions = []
+    if 'final_writing_quiz_answers' not in st.session_state:
+        st.session_state.final_writing_quiz_answers = {}
+    if 'final_writing_quiz_submitted' not in st.session_state:
+        st.session_state.final_writing_quiz_submitted = False
+    if 'final_writing_quiz_current_index' not in st.session_state:
+        st.session_state.final_writing_quiz_current_index = 0
+    if 'final_writing_quiz_evaluations' not in st.session_state:
+        st.session_state.final_writing_quiz_evaluations = {}
+    if 'final_writing_quiz_evaluation_in_progress' not in st.session_state:
+        st.session_state.final_writing_quiz_evaluation_in_progress = set()
+    if 'evaluation_start_times' not in st.session_state:
+        st.session_state.evaluation_start_times = {}
+    
+    # Student history
+    if 'student_history' not in st.session_state:
+        st.session_state.student_history = StudentHistory()
 
 def authentication_page():
     """Authentication page for API key and student details"""
@@ -252,7 +291,7 @@ def subject_selection_page():
                 st.session_state.current_page = "chapter_selection"
                 st.rerun()
     
-    if st.button("⬅️ Back to Class Selection"):
+    if st.button("⬅️ Back to Class Selection", key="back_to_class_selection"):
         st.session_state.current_page = "class_selection"
         st.session_state.selected_class = None
         st.rerun()
@@ -271,7 +310,7 @@ def chapter_selection_page():
             st.session_state.current_page = "topic_selection"
             st.rerun()
     
-    if st.button("⬅️ Back to Subject Selection"):
+    if st.button("⬅️ Back to Subject Selection", key="back_to_subject_selection"):
         st.session_state.current_page = "subject_selection"
         st.session_state.selected_subject = None
         st.rerun()
@@ -307,7 +346,7 @@ def topic_selection_page():
                 st.session_state.show_feedback = False
             st.rerun()
     
-    if st.button("⬅️ Back to Chapter Selection"):
+    if st.button("⬅️ Back to Chapter Selection", key="back_to_chapter_selection"):
         st.session_state.current_page = "chapter_selection"
         st.session_state.selected_chapter = None
         st.rerun()
@@ -323,11 +362,11 @@ def learning_hub_page():
         menu_option = st.radio(
             "Choose learning mode:",
             ["📖 Topic Explanation", "💬 Interactive Q&A", "🎥 Video Learning", 
-             "🧩 Mini Quiz", "📝 Final Quiz", "📊 My Progress"]
+             "🧩 Mini Quiz", "📝 Final Quiz", "📊 My Progress", "🌐 3D Model Viewer"]
         )
         
         st.markdown("---")
-        if st.button("🏠 Back to Topics"):
+        if st.button("🏠 Back to Topics", key="back_to_topics"):
             st.session_state.current_page = "topic_selection"
             st.session_state.selected_topic = None
             # Reset explanation when leaving topic
@@ -350,6 +389,15 @@ def learning_hub_page():
         final_quiz_section()
     elif menu_option == "📊 My Progress":
         progress_section()
+    elif menu_option == "🌐 3D Model Viewer":
+        # Direct redirect without intermediate page
+        st.components.v1.html("""
+        <script>
+        window.open('https://www.learningpadedu.com/', '_blank');
+        </script>
+        """, height=0)
+        st.success("🌐 Opening 3D Model Viewer in a new tab...")
+        st.info("💡 If the website didn't open automatically, [click here](https://www.learningpadedu.com/)")
 
 def topic_explanation_section():
     """Topic explanation section"""
@@ -374,10 +422,10 @@ def topic_explanation_section():
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        generate_explanation = st.button("🎯 Generate Explanation", type="primary")
+        generate_explanation = st.button("🎯 Generate Explanation", type="primary", key="generate_explanation")
     
     with col2:
-        open_qa_popup = st.button("🤖 AI Assistant", type="primary", help="Ask questions about this topic in a popup")
+        open_qa_popup = st.button("🤖 AI Assistant", type="primary", help="Ask questions about this topic in a popup", key="open_ai_assistant")
     
     # Handle explanation generation
     if generate_explanation:
@@ -392,12 +440,6 @@ def topic_explanation_section():
                 'mathematics', 'math', 'maths', 
                 'physical science', 'physics', 'science', 'physical sciences'
             ]
-            
-            # Show that personalization and LaTeX formatting are being applied
-            if user_preferences:
-                st.info("🎯 Applying your learning preferences to create a personalized explanation...")
-            if is_math_science:
-                st.info("📐 Enabling LaTeX formatting for mathematical and scientific notation...")
             
             # Generate the explanation
             explanation = ai_assistant.generate_topic_explanation(
@@ -443,12 +485,6 @@ This lesson uses LaTeX formatting for precise mathematical and scientific notati
             
             # Store explanation in session state
             st.session_state.current_explanation = explanation
-            
-            # Show success messages
-            if user_preferences:
-                st.success("✅ Explanation personalized based on your learning preferences!")
-            if is_math_science:
-                st.success("📐 LaTeX formatting enabled for mathematical and scientific notation!")
             
             # Record this study session
             st.session_state.student_history.add_topic_studied(
@@ -653,12 +689,12 @@ def show_qa_popup_dialog():
     # Close button
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        if st.button("🗑️ Clear Chat", use_container_width=True):
+        if st.button("🗑️ Clear Chat", use_container_width=True, key="clear_popup_chat"):
             st.session_state.popup_chat_history = []
             st.rerun()
     
     with col2:
-        if st.button("📋 Copy to Main Chat", use_container_width=True):
+        if st.button("📋 Copy to Main Chat", use_container_width=True, key="copy_to_main_chat"):
             # Copy popup chat to main chat history
             st.session_state.chat_history.extend(st.session_state.popup_chat_history)
             st.session_state.popup_chat_history = []
@@ -666,7 +702,7 @@ def show_qa_popup_dialog():
             st.rerun()
     
     with col3:
-        if st.button("❌ Close", use_container_width=True):
+        if st.button("❌ Close", use_container_width=True, key="close_qa_popup"):
             st.session_state.show_qa_popup = False
             st.rerun()
 
@@ -746,13 +782,13 @@ def show_hint_popup_dialog():
     col1, col2, col3 = st.columns([1, 1, 1])
     
     with col1:
-        if st.button("🗑️ Clear Hints", use_container_width=True):
+        if st.button("🗑️ Clear Hints", use_container_width=True, key="clear_hints"):
             st.session_state.hint_chat_history = []
             st.session_state.hint_level = 0
             st.rerun()
     
     with col2:
-        if st.button("🎯 Show Answer", use_container_width=True):
+        if st.button("🎯 Show Answer", use_container_width=True, key="show_answer_hint"):
             # Show the complete answer as final hint
             final_hint = f"""🎯 **Complete Answer:**
 
@@ -768,7 +804,7 @@ Now that you know the answer, make sure you understand the reasoning behind it! 
             st.rerun()
     
     with col3:
-        if st.button("❌ Close", use_container_width=True):
+        if st.button("❌ Close", use_container_width=True, key="close_hint_popup"):
             st.session_state.show_hint_popup = False
             st.rerun()
 
@@ -816,7 +852,7 @@ def video_learning_section():
     st.info(f"📚 **Current Topic:** {st.session_state.selected_topic} ({st.session_state.selected_subject})")
     
     # Single button to find the best video
-    if st.button("🎯 Find Best Educational Video", type="primary", use_container_width=True):
+    if st.button("🎯 Find Best Educational Video", type="primary", use_container_width=True, key="find_best_video"):
         with st.spinner("🔍 Finding the most relevant educational video for you..."):
             try:
                 video_recommender = VideoRecommender()
@@ -902,7 +938,7 @@ def video_learning_section():
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("▶️ **WATCH THIS VIDEO**", type="primary", use_container_width=True):
+            if st.button("▶️ **WATCH THIS VIDEO**", type="primary", use_container_width=True, key="watch_video"):
                 # Record video view in history
                 st.session_state.student_history.add_video_view(
                     st.session_state.selected_topic,
@@ -918,7 +954,7 @@ def video_learning_section():
                     <a href='{video['url']}' target='_blank' style='background-color: #ff4444; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 18px;'>
                         ▶️ OPEN VIDEO IN YOUTUBE
                     </a>
-                    <p style='margin-top: 15px; color: #666;'>Click the red button above to open the video in a new tab</p>
+                    <p style='margin-top: 15px; color: #495057; font-weight: 500;'>Click the red button above to open the video in a new tab</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -927,7 +963,7 @@ def video_learning_section():
         
         # Clear video button
         st.markdown("---")
-        if st.button("🗑️ Find Different Video"):
+        if st.button("🗑️ Find Different Video", key="find_different_video"):
             if 'best_video' in st.session_state:
                 del st.session_state['best_video']
             st.rerun()
@@ -957,8 +993,20 @@ def video_learning_section():
         st.markdown("**Click the button above to find your perfect educational video!** 🚀")
 
 def mini_quiz_section():
-    """Continuous Adaptive Mini Quiz section"""
-    st.subheader("🧩 Mini Quiz (Continuous Adaptive)")
+    """Mini Quiz section with two tabs - Multiple Choice and Writing Quiz"""
+    st.subheader("🧩 Mini Quiz")
+    
+    # Create tabs for different quiz types
+    tab1, tab2 = st.tabs(["📝 Multiple Choice Quiz", "✍️ Writing Quiz"])
+    
+    with tab1:
+        multiple_choice_quiz_section()
+    
+    with tab2:
+        writing_quiz_section()
+
+def multiple_choice_quiz_section():
+    """Continuous Adaptive Multiple Choice Quiz section"""
     st.markdown("**Keep practicing until you feel confident!** The AI will adapt questions based on your performance.")
     
     # Initialize session state for continuous quiz
@@ -1000,7 +1048,7 @@ def mini_quiz_section():
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            if st.button("🚀 Start Continuous Quiz", type="primary", use_container_width=True):
+            if st.button("🚀 Start Continuous Quiz", type="primary", use_container_width=True, key="start_continuous_quiz"):
                 st.session_state.continuous_quiz_active = True
                 st.session_state.show_feedback = False
                 st.rerun()
@@ -1083,7 +1131,7 @@ def display_current_adaptive_question():
         st.markdown(f"**{question['question']}**")
     
     with col2:
-        if st.button("💡 Hint", use_container_width=True):
+        if st.button("💡 Hint", use_container_width=True, key="get_hint"):
             st.session_state.show_hint_popup = True
             st.session_state.current_hint_question = question
             st.session_state.hint_level = 0
@@ -1098,7 +1146,7 @@ def display_current_adaptive_question():
     )
     
     # Submit button only
-    if st.button("✅ Submit Answer", type="primary", use_container_width=True):
+    if st.button("✅ Submit Answer", type="primary", use_container_width=True, key="submit_adaptive_answer"):
         submit_adaptive_answer(selected_answer, question)
     
     # Show hint popup if requested
@@ -1179,13 +1227,13 @@ def display_answer_feedback():
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        if st.button("➡️ Next Question", type="primary"):
+        if st.button("➡️ Next Question", type="primary", key="next_question_feedback"):
             st.session_state.show_feedback = False
             st.rerun()
     
     with col2:
         if not is_correct:
-            if st.button("🔄 More Practice on This Concept"):
+            if st.button("🔄 More Practice on This Concept", key="more_practice_concept"):
                 # Force a related question on the same concept
                 stats['last_wrong_concept'] = question.get('concept_focus', question['question'])
                 st.session_state.show_feedback = False
@@ -1199,7 +1247,7 @@ def display_quiz_controls():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🏁 I'm Ready for Final Quiz!"):
+        if st.button("🏁 I'm Ready for Final Quiz!", key="ready_for_final_quiz"):
             st.session_state.continuous_quiz_active = False
             st.session_state.current_adaptive_question = None
             st.session_state.show_feedback = False
@@ -1220,7 +1268,7 @@ def display_quiz_controls():
             st.rerun()
     
     with col2:
-        if st.button("🔄 Restart Quiz"):
+        if st.button("🔄 Restart Quiz", key="restart_continuous_quiz"):
             # Reset all quiz state
             st.session_state.continuous_quiz_active = False
             st.session_state.continuous_quiz_stats = {
@@ -1237,15 +1285,951 @@ def display_quiz_controls():
             st.rerun()
     
     with col3:
-        if st.button("🏠 Back to Learning Hub"):
+        if st.button("🏠 Back to Learning Hub", key="back_to_hub_continuous_quiz"):
             st.session_state.continuous_quiz_active = False
             st.session_state.current_adaptive_question = None
             st.session_state.show_feedback = False
             st.rerun()
 
+def writing_quiz_section():
+    """Writing Quiz section with OCR functionality"""
+    st.markdown("**Practice your written answers!** Write your answers on paper and upload an image for AI evaluation.")
+    
+    # Check if OCR functionality is available
+    if not OCR_AVAILABLE:
+        st.error("❌ OCR functionality not available. Please ensure OCRapp.py is in the same directory.")
+        return
+    
+    # Check if user has selected a topic
+    if not st.session_state.selected_topic:
+        st.warning("⚠️ Please select a topic first from the Learning Hub to generate writing questions.")
+        return
+    
+    # Initialize writing quiz state
+    if 'writing_quiz_active' not in st.session_state:
+        st.session_state.writing_quiz_active = False
+        st.session_state.writing_quiz_question = None
+        st.session_state.writing_quiz_marks = 2
+        st.session_state.writing_quiz_evaluations = []
+    
+    # Display current topic
+    st.info(f"📚 **Current Topic:** {st.session_state.selected_topic}")
+    st.info(f"📖 **Subject:** {st.session_state.selected_subject} | **Class:** {st.session_state.selected_class}")
+    
+    if not st.session_state.writing_quiz_active:
+        # Quiz setup section
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown("### 📝 **Generate Writing Question**")
+            
+            marks = st.selectbox(
+                "Select question marks:",
+                options=[2, 4, 8],
+                index=0,  # Default to 2 marks
+                help="Choose the mark allocation for the question"
+            )
+            st.session_state.writing_quiz_marks = marks
+            
+            if st.button("🎯 Generate Writing Question", type="primary", use_container_width=True, key="generate_writing_question"):
+                generate_writing_question()
+        
+        with col2:
+            st.markdown("### 💡 **How it works:**")
+            st.markdown("• Get a question for your topic")
+            st.markdown("• Write answer on paper")
+            st.markdown("• Take a clear photo")
+            st.markdown("• Upload for AI evaluation")
+            st.markdown("• Get detailed feedback")
+    
+    else:
+        # Active writing quiz section
+        conduct_writing_quiz()
+
+def generate_writing_question():
+    """Generate a writing question for the selected topic"""
+    
+    with st.spinner(f"🎯 Generating {st.session_state.writing_quiz_marks}-mark question..."):
+        try:
+            # Use OCR assistant
+            if OCR_AVAILABLE:
+                assistant = ExamAssistant(st.session_state.api_key)
+            else:
+                assistant = None
+            if not assistant:
+                st.error("❌ OCR functionality not available. Please ensure OCRapp.py is in the same directory.")
+                return
+            
+            # Debug information
+            topic = st.session_state.selected_topic
+            marks = st.session_state.writing_quiz_marks
+            
+            # Generate question based on selected topic
+            question = assistant.generate_question(
+                topic=topic,
+                marks=marks
+            )
+            
+            # Enhanced debugging for question generation
+            if question and question.strip():
+                st.session_state.writing_quiz_question = question.strip()
+                st.session_state.writing_quiz_active = True
+                st.rerun()
+            else:
+                st.error("❌ Could not generate question. Please try again.")
+                # Debug information to help identify the issue
+                with st.expander("🔧 Debug Information"):
+                    st.write(f"**Topic:** {topic}")
+                    st.write(f"**Marks:** {marks}")
+                    st.write(f"**API Key Available:** {bool(st.session_state.api_key)}")
+                    st.write(f"**OCR Available:** {OCR_AVAILABLE}")
+                    st.write(f"**Question Response:** {repr(question)}")
+                    
+        except Exception as e:
+            st.error(f"⚠️ Error generating question: {str(e)}")
+            # Additional debug info for exceptions
+            with st.expander("🔧 Debug Information"):
+                st.write(f"**Topic:** {st.session_state.get('selected_topic', 'Not set')}")
+                st.write(f"**Marks:** {st.session_state.get('writing_quiz_marks', 'Not set')}")
+                st.write(f"**API Key Available:** {bool(st.session_state.get('api_key', ''))}")
+                st.write(f"**Error Details:** {type(e).__name__}: {str(e)}")
+                import traceback
+                st.write(f"**Full Traceback:** {traceback.format_exc()}")
+
+def conduct_writing_quiz():
+    """Conduct the writing quiz with OCR evaluation"""
+    
+    question = st.session_state.writing_quiz_question
+    marks = st.session_state.writing_quiz_marks
+    
+    st.markdown("---")
+    st.markdown(f"### 📝 Writing Question ({marks} marks)")
+    
+    # Display question in a styled box
+    st.markdown(f"""
+    <div style="
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border-left: 5px solid #1a237e;
+        border: 1px solid #dee2e6;
+        margin: 1rem 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    ">
+        <h4 style="color: #1a237e; margin-bottom: 1rem; font-weight: bold;">Question:</h4>
+        <p style="color: #212529; line-height: 1.6; font-size: 1.1rem; margin: 0; font-weight: 500;">
+            {question}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("### ✍️ Upload Your Handwritten Answer")
+    st.markdown("📸 **Instructions:** Write your answer clearly on paper and take a high-quality photo.")
+    
+    # File uploader for answer image
+    uploaded_file = st.file_uploader(
+        "Choose an image file",
+        type=['png', 'jpg', 'jpeg'],
+        help="Upload a clear image of your handwritten answer"
+    )
+    
+    if uploaded_file is not None:
+        # Display image
+        from PIL import Image
+        image = Image.open(uploaded_file)
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.image(image, caption="Answer Preview", use_container_width=True)
+        
+        with col2:
+            st.markdown("### 🤖 **AI Evaluation**")
+            
+            if st.button("🔍 Evaluate My Answer", type="primary", use_container_width=True, key="evaluate_writing_answer"):
+                evaluate_writing_answer(image, question, marks)
+    
+    # Control buttons
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🔄 Generate New Question", key="generate_new_writing_question"):
+            st.session_state.writing_quiz_active = False
+            st.session_state.writing_quiz_question = None
+            st.rerun()
+    
+    with col2:
+        if st.button("📊 View Past Evaluations", key="view_writing_evaluations"):
+            show_writing_quiz_history()
+    
+    with col3:
+        if st.button("🏠 Back to Learning Hub", key="back_to_hub_writing_quiz"):
+            st.session_state.writing_quiz_active = False
+            st.session_state.writing_quiz_question = None
+            st.rerun()
+
+def evaluate_writing_answer(image, question, marks):
+    """Evaluate the writing answer using OCR"""
+    
+    with st.spinner("🔍 Analyzing your handwritten answer..."):
+        try:
+            # Use OCR assistant
+            if OCR_AVAILABLE:
+                assistant = ExamAssistant(st.session_state.api_key)
+            else:
+                assistant = None
+            if not assistant:
+                st.error("❌ OCR functionality not available. Please ensure OCRapp.py is in the same directory.")
+                return
+            
+            # Evaluate the handwritten answer
+            evaluation = assistant.evaluate_handwritten_answer(
+                image=image,
+                topic=st.session_state.selected_topic,
+                marks=marks,
+                question=question
+            )
+            
+            if evaluation:
+                display_writing_evaluation(evaluation, marks)
+                
+                # Store evaluation in session
+                if 'writing_quiz_evaluations' not in st.session_state:
+                    st.session_state.writing_quiz_evaluations = []
+                
+                st.session_state.writing_quiz_evaluations.append({
+                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'topic': st.session_state.selected_topic,
+                    'subject': st.session_state.selected_subject,
+                    'class': st.session_state.selected_class,
+                    'question': question,
+                    'marks': marks,
+                    'evaluation': evaluation
+                })
+            else:
+                st.error("❌ Could not evaluate answer. Please try again.")
+                
+        except Exception as e:
+            st.error(f"⚠️ Error evaluating answer: {str(e)}")
+
+def display_writing_evaluation(evaluation, total_marks):
+    """Display the writing evaluation results"""
+    
+    st.markdown("### 📊 **Evaluation Results**")
+    
+    # Marks display
+    marks_awarded = evaluation.get('marks_awarded', 0)
+    percentage = (marks_awarded / total_marks) * 100 if total_marks > 0 else 0
+    
+    st.markdown(f"""
+    <div style="
+        font-size: 1.75rem;
+        font-weight: bold;
+        color: #1a237e;
+        text-align: center;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        border: 2px solid #1a237e;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        margin: 1rem 0;
+    ">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem; color: #1a237e;">
+            {marks_awarded} / {total_marks}
+        </div>
+        <div style="font-size: 1.25rem; color: #495057; font-weight: 600;">
+            {percentage:.1f}%
+        </div>
+        <div style="margin-top: 1rem; height: 8px; background-color: #e9ecef; border-radius: 4px;">
+            <div style="width: {percentage}%; height: 100%; background-color: {
+                '#1b5e20' if percentage >= 80 else
+                '#2e7d32' if percentage >= 70 else
+                '#f57c00' if percentage >= 60 else
+                '#d32f2f'
+            }; border-radius: 4px;"></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Performance grade
+    grade = (
+        'Excellent' if percentage >= 80 else
+        'Good' if percentage >= 70 else
+        'Satisfactory' if percentage >= 60 else
+        'Needs Improvement'
+    )
+    
+    st.markdown(f"""
+    <div style="text-align: center; margin-top: 0.5rem; color: {
+        '#1b5e20' if percentage >= 80 else
+        '#2e7d32' if percentage >= 70 else
+        '#f57c00' if percentage >= 60 else
+        '#d32f2f'
+    };">
+        <strong>{grade}</strong>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Detailed evaluation sections
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if evaluation.get('extracted_text'):
+            with st.expander("📝 Extracted Text", expanded=True):
+                st.write(f"*{evaluation['extracted_text']}*")
+        
+        if evaluation.get('evaluation'):
+            with st.expander("🔍 Detailed Evaluation", expanded=True):
+                st.write(evaluation['evaluation'])
+    
+    with col2:
+        if evaluation.get('feedback'):
+            with st.expander("💡 Feedback & Suggestions", expanded=True):
+                st.write(evaluation['feedback'])
+        
+        # Strengths and improvements
+        if evaluation.get('strengths'):
+            st.success("**✅ Strengths:**")
+            for strength in evaluation['strengths']:
+                st.write(f"• {strength}")
+        
+        if evaluation.get('improvements'):
+            st.info("**📈 Areas for Improvement:**")
+            for improvement in evaluation['improvements']:
+                st.write(f"• {improvement}")
+
+def show_writing_quiz_history():
+    """Show past writing quiz evaluations"""
+    
+    if not st.session_state.get('writing_quiz_evaluations', []):
+        st.info("📝 No past evaluations found. Complete some writing quizzes to see your history!")
+        return
+    
+    st.markdown("### 📊 **Writing Quiz History**")
+    
+    for i, eval_data in enumerate(reversed(st.session_state.writing_quiz_evaluations)):
+        with st.expander(f"📝 {eval_data['timestamp']} - {eval_data['topic']} ({eval_data['marks']} marks)", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**Question:** {eval_data['question']}")
+                st.write(f"**Subject:** {eval_data['subject']}")
+                st.write(f"**Class:** {eval_data['class']}")
+            
+            with col2:
+                evaluation = eval_data['evaluation']
+                marks_awarded = evaluation.get('marks_awarded', 0)
+                percentage = (marks_awarded / eval_data['marks']) * 100
+                
+                st.metric("Score", f"{marks_awarded}/{eval_data['marks']}")
+                st.metric("Percentage", f"{percentage:.1f}%")
+            
+            if evaluation.get('feedback'):
+                st.write(f"**Feedback:** {evaluation['feedback']}")
+
+def final_writing_quiz_section():
+    """Final Writing Quiz section with 3 questions of progressive difficulty - no intermediate feedback"""
+    st.markdown("**Complete 3 writing questions with progressive difficulty!** Answer all questions sequentially, then get comprehensive feedback for all at the end.")
+    
+    # Show progressive difficulty structure
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.info("**Q1: 2 marks**\nFoundational")
+    with col2:
+        st.info("**Q2: 4 marks**\nIntermediate")
+    with col3:
+        st.info("**Q3: 8 marks**\nAdvanced")
+    
+    # Important notice about the exam flow
+    st.warning("📋 **Exam Format:** You'll answer questions one by one. Feedback and scores will be shown only after completing all 3 questions!")
+    
+    # Check if OCR functionality is available
+    if not OCR_AVAILABLE:
+        st.error("❌ OCR functionality not available. Please ensure OCRapp.py is in the same directory.")
+        return
+    
+    # Check if user has selected a topic
+    if not st.session_state.selected_topic:
+        st.warning("⚠️ Please select a topic first from the Learning Hub to generate writing questions.")
+        return
+    
+    # Display current topic
+    st.info(f"📚 **Current Topic:** {st.session_state.selected_topic}")
+    st.info(f"📖 **Subject:** {st.session_state.selected_subject} | **Class:** {st.session_state.selected_class}")
+    
+    if not st.session_state.final_writing_quiz_active:
+        # Quiz start section
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown("### 📝 **Final Writing Quiz**")
+            st.markdown("""
+            **Exam Format:**
+            - 3 comprehensive writing questions with progressive difficulty
+            - Question 1: 2 marks (Foundational)
+            - Question 2: 4 marks (Intermediate) 
+            - Question 3: 8 marks (Advanced)
+            - Answer questions sequentially (one at a time)
+            - **No intermediate feedback during the exam**
+            - Complete evaluation and feedback shown after all 3 questions
+            """)
+            
+            if st.button("🚀 Start Final Writing Quiz", type="primary", use_container_width=True, key="start_final_writing_quiz"):
+                st.session_state.final_writing_quiz_active = True
+                st.session_state.final_writing_quiz_current_index = 0
+                st.session_state.final_writing_quiz_questions = []
+                st.session_state.final_writing_quiz_answers = {}
+                st.session_state.final_writing_quiz_submitted = False
+                st.session_state.final_writing_quiz_evaluations = {}
+                st.session_state.final_writing_quiz_evaluation_in_progress = set()
+                st.session_state.final_writing_quiz_evaluation_started = False
+                st.rerun()
+        
+        with col2:
+            st.markdown("### 💡 **Exam Instructions**")
+            st.markdown("""
+            ✅ Complete questions in order (Q1 → Q2 → Q3)  
+            ✅ Progressive difficulty: 2→4→8 marks
+            ✅ Write clearly on paper  
+            ✅ Take high-quality photos  
+            ✅ Submit one answer at a time  
+            ✅ **No scores shown until the end**
+            ✅ Complete feedback after final submission  
+            """)
+    
+    elif not st.session_state.final_writing_quiz_submitted:
+        # Active quiz
+        conduct_final_writing_quiz()
+    
+    else:
+        # Show results
+        display_final_writing_results()
+
+def conduct_final_writing_quiz():
+    """Conduct the final writing quiz with 3 questions - no intermediate feedback"""
+    
+    current_index = st.session_state.final_writing_quiz_current_index
+    total_questions = 3
+    
+    # Progressive marks display
+    marks_progression = [2, 4, 8]
+    current_marks = marks_progression[current_index] if current_index < len(marks_progression) else 2
+    
+    # Progress indicator with marks info
+    st.markdown(f"### 📝 **Question {current_index + 1} of {total_questions}** ({current_marks} marks)")
+    
+    # Progress bar - show completed questions only
+    progress = (current_index) / total_questions
+    st.progress(progress, text=f"Progress: {current_index}/{total_questions} questions completed")
+    
+    # Check if we need to generate the current question
+    if len(st.session_state.final_writing_quiz_questions) <= current_index:
+        # Show generate button for first question, auto-generate for others
+        if current_index == 0:
+            if st.button("🎯 Generate 2 Mark Question", type="primary", use_container_width=True, key="generate_first_question"):
+                generate_final_writing_question()
+                st.rerun()
+            return
+        else:
+            # Auto-generate subsequent questions
+            generate_final_writing_question()
+            st.rerun()
+            return
+    
+    # Display current question if available
+    if len(st.session_state.final_writing_quiz_questions) > current_index:
+        question = st.session_state.final_writing_quiz_questions[current_index]
+        
+        # Display question in a styled box with correct marks
+        st.markdown(f"""
+        <div style="
+            background-color: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 10px;
+            border-left: 5px solid #1a237e;
+            border: 1px solid #dee2e6;
+            margin: 1rem 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        ">
+            <h4 style="color: #1a237e; margin-bottom: 1rem; font-weight: bold;">Question {current_index + 1} ({current_marks} marks):</h4>
+            <p style="color: #212529; line-height: 1.6; font-size: 1.1rem; margin: 0; font-weight: 500;">
+                {question}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("### ✍️ Upload Your Handwritten Answer")
+        st.markdown("📸 **Instructions:** Write your answer clearly on paper and take a high-quality photo.")
+        
+        # File uploader for answer image
+        uploaded_file = st.file_uploader(
+            "Choose an image file",
+            type=['png', 'jpg', 'jpeg'],
+            help="Upload a clear image of your handwritten answer",
+            key=f"final_writing_upload_{current_index}"
+        )
+        
+        if uploaded_file is not None:
+            # Display image
+            from PIL import Image
+            image = Image.open(uploaded_file)
+            
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.image(image, caption="Answer Preview", use_container_width=True)
+            
+            with col2:
+                st.markdown("### 🤖 **Submit Answer**")
+                
+                # Different button text for final question
+                if current_index == total_questions - 1:
+                    button_text = "🏁 Submit Final Answer & Get Results"
+                    success_text = "🎉 All answers submitted! Evaluating all responses..."
+                else:
+                    button_text = f"✅ Submit Answer {current_index + 1}"
+                    success_text = f"✅ Answer {current_index + 1} submitted! Moving to next question..."
+                
+                if st.button(button_text, type="primary", use_container_width=True, key=f"submit_final_writing_{current_index}"):
+                    # Store the answer
+                    st.session_state.final_writing_quiz_answers[current_index] = {
+                        'image': image,
+                        'question': question,
+                        'marks': current_marks,
+                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    # Handle submission based on question number
+                    if current_index < total_questions - 1:
+                        # Moving to next question - start background evaluation for current question
+                        # Q1->Q2: Start evaluating Q1 in background
+                        # Q2->Q3: Start evaluating Q2 in background
+                        trigger_background_evaluation(current_index)
+                        
+                        st.session_state.final_writing_quiz_current_index += 1
+                        st.success(success_text)
+                        st.rerun()
+                    else:
+                        # Final question submitted - evaluate all remaining questions
+                        st.success(success_text)
+                        
+                        # Start evaluation for the final question (Q3)
+                        trigger_background_evaluation(current_index)
+                        
+                        # Ensure all previous questions are evaluated if not already
+                        for i in range(current_index):
+                            if (i not in st.session_state.final_writing_quiz_evaluations and 
+                                i not in st.session_state.final_writing_quiz_evaluation_in_progress):
+                                trigger_background_evaluation(i)
+                        
+                        st.session_state.final_writing_quiz_submitted = True
+                        st.info("⏳ Please wait while we evaluate all your answers...")
+                        st.rerun()
+
+    # Control buttons
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔄 Restart Quiz", key="restart_final_writing_quiz"):
+            st.session_state.final_writing_quiz_active = False
+            st.session_state.final_writing_quiz_current_index = 0
+            st.session_state.final_writing_quiz_questions = []
+            st.session_state.final_writing_quiz_answers = {}
+            st.session_state.final_writing_quiz_submitted = False
+            st.session_state.final_writing_quiz_evaluations = {}
+            st.session_state.final_writing_quiz_evaluation_in_progress = set()
+            st.rerun()
+    
+    with col2:
+        if st.button("🏠 Back to Learning Hub", key="back_to_hub_final_writing_quiz"):
+            st.session_state.final_writing_quiz_active = False
+            st.rerun()
+
+def trigger_background_evaluation(question_index: int):
+    """Trigger background evaluation for a specific question"""
+    
+    # Check if evaluation is already in progress or completed
+    if (question_index in st.session_state.final_writing_quiz_evaluation_in_progress or
+        question_index in st.session_state.final_writing_quiz_evaluations):
+        return
+    
+    # Check if answer exists
+    if question_index not in st.session_state.final_writing_quiz_answers:
+        return
+    
+    try:
+        # Mark as in progress
+        st.session_state.final_writing_quiz_evaluation_in_progress.add(question_index)
+        
+        # Initialize evaluation start times if not exists
+        if not hasattr(st.session_state, 'evaluation_start_times'):
+            st.session_state.evaluation_start_times = {}
+        st.session_state.evaluation_start_times[question_index] = datetime.now()
+        
+        # Get answer data
+        answer_data = st.session_state.final_writing_quiz_answers[question_index]
+        
+        # Perform evaluation
+        if OCR_AVAILABLE:
+            assistant = ExamAssistant(st.session_state.api_key)
+            evaluation = assistant.evaluate_handwritten_answer(
+                image=answer_data['image'],
+                topic=st.session_state.selected_topic,
+                marks=answer_data['marks'],
+                question=answer_data['question']
+            )
+            
+            if evaluation:
+                # Store successful evaluation
+                st.session_state.final_writing_quiz_evaluations[question_index] = {
+                    'evaluation': evaluation,
+                    'question': answer_data['question'],
+                    'marks': answer_data['marks'],
+                    'evaluated_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+            else:
+                # Store error state
+                st.session_state.final_writing_quiz_evaluations[question_index] = {
+                    'error': 'Failed to evaluate answer - please try again',
+                    'question': answer_data['question'],
+                    'marks': answer_data['marks'],
+                    'evaluated_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+        else:
+            # Store OCR unavailable error
+            st.session_state.final_writing_quiz_evaluations[question_index] = {
+                'error': 'OCR functionality not available',
+                'question': answer_data['question'],
+                'marks': answer_data['marks'],
+                'evaluated_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+    
+    except Exception as e:
+        # Store exception error
+        st.session_state.final_writing_quiz_evaluations[question_index] = {
+            'error': f'Evaluation error: {str(e)}',
+            'question': answer_data['question'] if question_index in st.session_state.final_writing_quiz_answers else 'Unknown',
+            'marks': answer_data['marks'] if question_index in st.session_state.final_writing_quiz_answers else 0,
+            'evaluated_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    
+    finally:
+        # Always clear in-progress state
+        if question_index in st.session_state.final_writing_quiz_evaluation_in_progress:
+            st.session_state.final_writing_quiz_evaluation_in_progress.remove(question_index)
+
+def generate_final_writing_question():
+    """Generate a writing question with progressive difficulty for the final writing quiz"""
+    
+    current_index = st.session_state.final_writing_quiz_current_index
+    
+    # Progressive marks: Q1=2, Q2=4, Q3=8
+    marks_progression = [2, 4, 8]
+    marks = marks_progression[current_index] if current_index < len(marks_progression) else 2
+    
+    # Progressive difficulty levels
+    difficulty_progression = ["basic", "intermediate", "advanced"]
+    difficulty = difficulty_progression[current_index] if current_index < len(difficulty_progression) else "basic"
+    
+    with st.spinner(f"🎯 Generating {marks}-mark question (Question {current_index + 1}/3)..."):
+        try:
+            # Use OCR assistant
+            if OCR_AVAILABLE:
+                assistant = ExamAssistant(st.session_state.api_key)
+                
+                if not assistant:
+                    st.error("⚠️ Failed to initialize OCR assistant.")
+                    # Provide fallback question
+                    fallback_question = f"Write a detailed answer about {st.session_state.selected_topic}. Explain the key concepts and provide examples where applicable. ({marks} marks)"
+                    st.session_state.final_writing_quiz_questions.append(fallback_question)
+                    st.warning(f"🔄 Using fallback question for Question {current_index + 1}")
+                    return
+                    
+                # Check API key
+                if not st.session_state.api_key:
+                    st.error("⚠️ API key not found. Please check your authentication.")
+                    # Provide fallback question
+                    fallback_question = f"Write a comprehensive answer about {st.session_state.selected_topic}. Cover the main points and explain with examples. ({marks} marks)"
+                    st.session_state.final_writing_quiz_questions.append(fallback_question)
+                    st.warning(f"🔄 Using fallback question for Question {current_index + 1}")
+                    return
+                
+                # Generate question based on selected topic with progressive marks
+                question = assistant.generate_question(
+                    topic=st.session_state.selected_topic,
+                    marks=marks
+                )
+                
+                if question and question.strip():
+                    st.session_state.final_writing_quiz_questions.append(question)
+                    st.success(f"✅ Generated {marks}-mark question (Question {current_index + 1}/3)")
+                else:
+                    # Provide a fallback question
+                    if marks == 2:
+                        fallback_question = f"Briefly explain what {st.session_state.selected_topic} is and why it is important. (2 marks)"
+                    elif marks == 4:
+                        fallback_question = f"Explain {st.session_state.selected_topic} in detail with examples and its key features. (4 marks)"
+                    else:  # 8 marks
+                        fallback_question = f"Write a comprehensive essay about {st.session_state.selected_topic}. Include definitions, explanations, examples, advantages, disadvantages, and real-world applications. (8 marks)"
+                    
+                    st.session_state.final_writing_quiz_questions.append(fallback_question)
+                    st.warning(f"🔄 Using fallback question for Question {current_index + 1}")
+            else:
+                st.error("⚠️ OCR functionality not available. Please ensure OCRapp.py is in the same directory.")
+                # Provide a fallback question even when OCR is not available
+                if marks == 2:
+                    fallback_question = f"Briefly explain what {st.session_state.selected_topic} is and why it is important. (2 marks)"
+                elif marks == 4:
+                    fallback_question = f"Explain {st.session_state.selected_topic} in detail with examples and its key features. (4 marks)"
+                else:  # 8 marks
+                    fallback_question = f"Write a comprehensive essay about {st.session_state.selected_topic}. Include definitions, explanations, examples, advantages, disadvantages, and real-world applications. (8 marks)"
+                
+                st.session_state.final_writing_quiz_questions.append(fallback_question)
+                st.warning(f"🔄 Using fallback question due to OCR unavailability (Question {current_index + 1})")
+                
+        except Exception as e:
+            st.error(f"⚠️ Error generating question: {str(e)}")
+            # Provide a fallback question in case of any error
+            if marks == 2:
+                fallback_question = f"Briefly explain what {st.session_state.selected_topic} is and why it is important. (2 marks)"
+            elif marks == 4:
+                fallback_question = f"Explain {st.session_state.selected_topic} in detail with examples and its key features. (4 marks)"
+            else:  # 8 marks
+                fallback_question = f"Write a comprehensive essay about {st.session_state.selected_topic}. Include definitions, explanations, examples, advantages, disadvantages, and real-world applications. (8 marks)"
+            
+            st.session_state.final_writing_quiz_questions.append(fallback_question)
+            st.warning(f"🔄 Using fallback question due to error (Question {current_index + 1})")
+
+def display_final_writing_results():
+    """Display final writing quiz results - only after all evaluations are complete"""
+    
+    st.title("🏆 Final Writing Quiz Results")
+    st.markdown("---")
+    
+    answers = st.session_state.final_writing_quiz_answers
+    evaluations = st.session_state.final_writing_quiz_evaluations
+    evaluation_in_progress = st.session_state.final_writing_quiz_evaluation_in_progress
+    total_questions = len(answers)
+    
+    if total_questions == 0:
+        st.warning("No answers found. Please complete the quiz first.")
+        if st.button("🔙 Return to Quiz", key="return_to_quiz_from_results"):
+            st.session_state.final_writing_quiz_active = True
+            st.session_state.final_writing_quiz_submitted = False
+            st.rerun()
+        return
+    
+    # Check for any missing evaluations and trigger them automatically
+    missing_evaluations = []
+    for i in range(total_questions):
+        if (i not in evaluations and 
+            i not in evaluation_in_progress and 
+            i in answers):
+            missing_evaluations.append(i)
+            # Trigger evaluation for missing questions
+            trigger_background_evaluation(i)
+    
+    if missing_evaluations:
+        st.info(f"🔄 Starting evaluations for questions: {[i+1 for i in missing_evaluations]}")
+    
+    # Header with quiz information
+    st.info(f"📚 **Topic:** {st.session_state.selected_topic} | **Subject:** {st.session_state.selected_subject} | **Class:** {st.session_state.selected_class}")
+    
+    # Check if all evaluations are complete
+    completed_evaluations = len([i for i in range(total_questions) if i in evaluations])
+    all_evaluations_complete = completed_evaluations == total_questions
+    
+    if not all_evaluations_complete:
+        # Show simple waiting message - no progress indicators
+        st.markdown("### ⏳ **Evaluating Your Answers**")
+        st.markdown("**Please wait while our AI evaluates all your responses...**")
+        st.markdown(f"**Progress:** {completed_evaluations}/{total_questions} questions evaluated")
+        
+        # Simple refresh button
+        if st.button("🔄 Check Results", key="check_results_simple"):
+            st.rerun()
+        
+        # Auto-refresh every 3 seconds
+        import time
+        time.sleep(3)
+        st.rerun()
+        return
+    
+    # All evaluations complete - show complete results
+    st.success("🎉 **All Evaluations Complete!** Here are your detailed results:")
+    st.balloons()
+    
+    # Calculate total marks and scores
+    total_possible_marks = sum([2, 4, 8])  # Progressive marks
+    total_awarded_marks = 0
+    
+    for i in range(total_questions):
+        if i in evaluations and evaluations[i].get('evaluation'):
+            total_awarded_marks += evaluations[i]['evaluation'].get('marks_awarded', 0)
+    
+    overall_percentage = (total_awarded_marks / total_possible_marks) * 100 if total_possible_marks > 0 else 0
+    
+    # Summary stats
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Questions Completed", f"{total_questions}/3")
+    
+    with col2:
+        st.metric("Total Score", f"{total_awarded_marks}/{total_possible_marks} marks")
+    
+    with col3:
+        st.metric("Overall Percentage", f"{overall_percentage:.1f}%")
+    
+    # Overall performance indicator
+    if overall_percentage >= 80:
+        st.success("🎉 **Excellent Performance!** Outstanding writing skills demonstrated!")
+    elif overall_percentage >= 70:
+        st.success("👏 **Good Performance!** Strong writing abilities shown!")
+    elif overall_percentage >= 60:
+        st.warning("📚 **Fair Performance.** Room for improvement in writing skills.")
+    else:
+        st.error("📖 **Needs Improvement.** Focus on developing writing techniques.")
+    
+    st.markdown("---")
+    
+    # Display detailed results for each question
+    st.markdown("### 📝 **Detailed Question-wise Results**")
+    
+    for i in range(total_questions):
+        if i in answers:
+            answer_data = answers[i]
+            evaluation_data = evaluations.get(i)
+            
+            # Question header with marks
+            marks_progression = [2, 4, 8]
+            question_marks = marks_progression[i] if i < len(marks_progression) else 2
+            
+            with st.expander(f"� Question {i + 1} ({question_marks} marks)", expanded=True):
+                # Question and answer display
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.markdown(f"**Question:** {answer_data['question']}")
+                    st.markdown(f"**Submitted at:** {answer_data['timestamp']}")
+                    
+                    # Show evaluation results
+                    if evaluation_data and evaluation_data.get('evaluation'):
+                        evaluation = evaluation_data['evaluation']
+                        marks_awarded = evaluation.get('marks_awarded', 0)
+                        percentage = (marks_awarded / question_marks) * 100
+                        
+                        # Score display
+                        st.markdown("---")
+                        st.markdown("#### 📊 **Evaluation Results**")
+                        
+                        # Score with color coding
+                        score_color = (
+                            '#1b5e20' if percentage >= 80 else
+                            '#2e7d32' if percentage >= 70 else
+                            '#f57c00' if percentage >= 60 else
+                            '#d32f2f'
+                        )
+                        
+                        st.markdown(f"""
+                        <div style="
+                            background-color: #f8f9fa;
+                            padding: 1rem;
+                            border-radius: 8px;
+                            border-left: 4px solid {score_color};
+                            margin: 10px 0;
+                        ">
+                            <h3 style="color: {score_color}; margin: 0;">
+                                {marks_awarded} / {question_marks} marks ({percentage:.1f}%)
+                            </h3>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Detailed feedback
+                        if evaluation.get('evaluation'):
+                            st.markdown("**📝 Detailed Evaluation:**")
+                            st.write(evaluation['evaluation'])
+                        
+                        if evaluation.get('feedback'):
+                            st.markdown("**💡 Feedback:**")
+                            st.write(evaluation['feedback'])
+                        
+                        if evaluation.get('extracted_text'):
+                            with st.expander("📄 Extracted Text"):
+                                st.write(f"*{evaluation['extracted_text']}*")
+                    
+                    else:
+                        st.error("⚠️ **Evaluation failed or incomplete.**")
+                
+                with col2:
+                    # Show image
+                    st.image(answer_data['image'], caption=f"Answer {i + 1}", use_container_width=True)
+    
+    # Performance insights
+    st.markdown("---")
+    st.markdown("### 📈 **Performance Summary**")
+    
+    # Individual question performance
+    question_scores = []
+    for i in range(total_questions):
+        marks_progression = [2, 4, 8]
+        question_marks = marks_progression[i] if i < len(marks_progression) else 2
+        if i in evaluations and evaluations[i].get('evaluation'):
+            awarded = evaluations[i]['evaluation'].get('marks_awarded', 0)
+            percentage = (awarded / question_marks) * 100
+            question_scores.append(f"**Q{i + 1} ({question_marks} marks):** {awarded}/{question_marks} ({percentage:.1f}%)")
+        else:
+            question_scores.append(f"**Q{i + 1} ({question_marks} marks):** Evaluation failed")
+    
+    st.info(f"""
+    🎯 **Individual Question Performance:**
+    {chr(10).join(question_scores)}
+    
+    **Overall Achievement:** {total_awarded_marks}/{total_possible_marks} marks ({overall_percentage:.1f}%)
+    """)
+    
+    # Action buttons
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🔄 Retake Writing Quiz", key="retake_final_writing_quiz_old"):
+            st.session_state.final_writing_quiz_active = False
+            st.session_state.final_writing_quiz_current_index = 0
+            st.session_state.final_writing_quiz_questions = []
+            st.session_state.final_writing_quiz_answers = {}
+            st.session_state.final_writing_quiz_submitted = False
+            st.session_state.final_writing_quiz_evaluations = {}
+            st.session_state.final_writing_quiz_evaluation_in_progress = set()
+            st.rerun()
+    
+    with col2:
+        if st.button("✍️ Practice Individual Questions", key="practice_individual_writing_old"):
+            st.info("💡 Go to Mini Quiz → Writing Quiz tab for individual question practice with evaluation!")
+    
+    with col3:
+        if st.button("🏠 Back to Learning Hub", key="back_to_hub_final_writing_results_old"):
+            st.session_state.final_writing_quiz_active = False
+            st.rerun()
+
 def final_quiz_section():
-    """Final comprehensive quiz section"""
-    st.subheader("📝 Final Comprehensive Quiz")
+    """Final quiz section with two tabs - Multiple Choice and Writing Quiz"""
+    st.subheader("📝 Final Quiz")
+    
+    # Create tabs for different quiz types
+    tab1, tab2 = st.tabs(["📝 Multiple Choice Quiz", "✍️ Final Writing Quiz"])
+    
+    with tab1:
+        final_multiple_choice_quiz_section()
+    
+    with tab2:
+        final_writing_quiz_section()
+
+def final_multiple_choice_quiz_section():
+    """Final comprehensive multiple choice quiz section"""
     st.markdown("Test your complete understanding with a 10-question comprehensive quiz!")
     
     # Initialize final quiz state
@@ -1271,7 +2255,7 @@ def final_quiz_section():
             - Performance analytics
             """)
             
-            if st.button("🚀 Start Final Quiz", type="primary", use_container_width=True):
+            if st.button("🚀 Start Final Quiz", type="primary", use_container_width=True, key="start_final_quiz"):
                 generate_final_quiz()
         
         with col2:
@@ -1356,11 +2340,11 @@ def conduct_final_quiz():
         total_questions = len(questions)
         
         if answered_count == total_questions:
-            if st.button("✅ Submit Final Quiz", type="primary", use_container_width=True):
+            if st.button("✅ Submit Final Quiz", type="primary", use_container_width=True, key="submit_final_quiz"):
                 calculate_final_quiz_score()
         else:
             st.warning(f"⚠️ Please answer all questions ({answered_count}/{total_questions} completed)")
-            st.button("✅ Submit Final Quiz", disabled=True, use_container_width=True)
+            st.button("✅ Submit Final Quiz", disabled=True, use_container_width=True, key="submit_final_quiz_disabled")
 
 def calculate_final_quiz_score():
     """Calculate and store final quiz score"""
@@ -1477,7 +2461,7 @@ def display_final_quiz_results():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🔄 Retake Final Quiz"):
+        if st.button("🔄 Retake Final Quiz", key="retake_final_quiz"):
             st.session_state.final_quiz_active = False
             st.session_state.final_quiz_submitted = False
             st.session_state.final_quiz_questions = []
@@ -1485,14 +2469,14 @@ def display_final_quiz_results():
             st.rerun()
     
     with col2:
-        if st.button("🧩 Practice More (Mini Quiz)"):
+        if st.button("🧩 Practice More (Mini Quiz)", key="practice_more_mini_quiz"):
             # Switch to mini quiz
             st.session_state.final_quiz_active = False
             st.session_state.final_quiz_submitted = False
             st.rerun()
     
     with col3:
-        if st.button("🏠 Back to Learning Hub"):
+        if st.button("🏠 Back to Learning Hub", key="back_to_hub_final_quiz"):
             st.session_state.final_quiz_active = False
             st.session_state.final_quiz_submitted = False
             st.rerun()
@@ -1549,7 +2533,7 @@ def progress_section():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
+        if st.button("📄 Generate PDF Report", type="primary", use_container_width=True, key="generate_pdf_report"):
             with st.spinner("📄 Generating PDF report..."):
                 try:
                     pdf_data = history.generate_pdf_report(st.session_state.student_name)
@@ -1567,7 +2551,7 @@ def progress_section():
                     st.error(f"❌ Error generating PDF: {str(e)}")
     
     with col2:
-        if st.button("📊 Export JSON Data", use_container_width=True):
+        if st.button("📊 Export JSON Data", use_container_width=True, key="export_json_data"):
             export_data = {
                 'student_name': st.session_state.student_name,
                 'topics_studied': [
