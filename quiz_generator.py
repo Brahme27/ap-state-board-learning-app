@@ -16,10 +16,77 @@ class QuizGenerator:
         self.api_key = api_key
         self.llm = ChatOpenAI(
             api_key=api_key,
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             temperature=0.5,
             max_tokens=2000
         )
+    
+    def _randomize_answer_options(self, correct_answer_text: str, wrong_options: List[str]) -> Dict[str, str]:
+        """
+        Randomize the position of the correct answer among options
+        Returns a dict with 'options' list and 'correct_answer' string
+        """
+        # Create list of all answer texts (without A), B), C), D) prefixes)
+        all_answers = [correct_answer_text] + wrong_options
+        
+        # Shuffle the answers
+        random.shuffle(all_answers)
+        
+        # Add A), B), C), D) prefixes
+        option_labels = ['A)', 'B)', 'C)', 'D)']
+        formatted_options = [f"{label} {answer}" for label, answer in zip(option_labels, all_answers)]
+        
+        # Find which option now contains the correct answer
+        correct_option = None
+        for option in formatted_options:
+            if correct_answer_text in option:
+                correct_option = option
+                break
+        
+        return {
+            'options': formatted_options,
+            'correct_answer': correct_option
+        }
+    
+    def _randomize_existing_question(self, question_data: Dict) -> Dict:
+        """
+        Randomize an existing question's answer positions
+        Useful for AI-generated questions that might have predictable answer positions
+        """
+        if not question_data or 'options' not in question_data or 'correct_answer' not in question_data:
+            return question_data
+        
+        try:
+            # Extract the answer texts without A), B), C), D) prefixes
+            answer_texts = []
+            correct_text = None
+            
+            for option in question_data['options']:
+                # Remove A), B), C), D) prefix
+                clean_text = option[3:].strip() if len(option) > 3 else option
+                answer_texts.append(clean_text)
+                
+                # Check if this is the correct answer
+                if option == question_data['correct_answer']:
+                    correct_text = clean_text
+            
+            if correct_text and len(answer_texts) >= 2:
+                # Remove correct answer from list and create wrong options
+                wrong_options = [text for text in answer_texts if text != correct_text]
+                
+                # Randomize using our existing method
+                randomized = self._randomize_answer_options(correct_text, wrong_options)
+                
+                # Update the question data
+                question_data['options'] = randomized['options']
+                question_data['correct_answer'] = randomized['correct_answer']
+            
+            return question_data
+            
+        except Exception as e:
+            # If randomization fails, return original question
+            print(f"Failed to randomize question: {e}")
+            return question_data
     
     def generate_next_adaptive_question(self, topic: str, subject: str, class_level: str, 
                                       difficulty: str = "easy", previous_wrong_answer: str = None,
@@ -99,7 +166,9 @@ class QuizGenerator:
                 question_data = json.loads(response.content)
                 # Validate required fields
                 if self._validate_question_data(question_data):
-                    return question_data
+                    # Randomize the answer positions for AI-generated questions
+                    randomized_question = self._randomize_existing_question(question_data)
+                    return randomized_question
                 else:
                     return self._create_fallback_adaptive_question(topic, subject, class_level, difficulty)
             except json.JSONDecodeError:
@@ -149,15 +218,20 @@ class QuizGenerator:
         templates = question_templates.get(subject, question_templates["Science"])
         question_text = templates.get(difficulty, templates["easy"])
         
+        # Create randomized options
+        correct_answer_text = f"Basic concept of {topic}"
+        wrong_options = [
+            f"Advanced concept of {topic}",
+            f"Related concept to {topic}",
+            f"All concepts are important"
+        ]
+        
+        randomized = self._randomize_answer_options(correct_answer_text, wrong_options)
+        
         return {
             "question": question_text,
-            "options": [
-                f"A) Basic concept of {topic}",
-                f"B) Advanced concept of {topic}",
-                f"C) Related concept to {topic}",
-                f"D) All concepts are important"
-            ],
-            "correct_answer": f"A) Basic concept of {topic}",
+            "options": randomized['options'],
+            "correct_answer": randomized['correct_answer'],
             "explanation": f"This relates to understanding the fundamental concepts of {topic}.",
             "concept_focus": f"Basic understanding of {topic}",
             "difficulty": difficulty
@@ -261,10 +335,16 @@ class QuizGenerator:
                 # Validate the questions
                 validated_questions = self.validate_quiz_questions(questions)
                 
+                # Randomize answer positions for all validated questions
+                randomized_questions = []
+                for question in validated_questions:
+                    randomized_question = self._randomize_existing_question(question)
+                    randomized_questions.append(randomized_question)
+                
                 # If we have at least some valid questions, use them and generate the rest individually
-                if len(validated_questions) > 0:
+                if len(randomized_questions) > 0:
                     # Use valid questions and generate remaining ones individually
-                    remaining_needed = 10 - len(validated_questions)
+                    remaining_needed = 10 - len(randomized_questions)
                     if remaining_needed > 0:
                         # Generate remaining questions individually using adaptive method
                         for i in range(remaining_needed):
@@ -272,9 +352,9 @@ class QuizGenerator:
                             individual_question = self.generate_next_adaptive_question(
                                 topic, subject, class_level, difficulty
                             )
-                            validated_questions.append(individual_question)
+                            randomized_questions.append(individual_question)
                     
-                    return validated_questions[:10]  # Ensure exactly 10 questions
+                    return randomized_questions[:10]  # Ensure exactly 10 questions
                 else:
                     # If no valid questions, generate all individually
                     return self._generate_individual_final_questions(topic, subject, class_level)
@@ -347,42 +427,41 @@ class QuizGenerator:
         
         # Create subject-appropriate options
         if subject == "Mathematics":
-            options = [
-                f"A) It involves calculations and formulas",
-                f"B) It's only theoretical",
-                f"C) It has no practical use",
-                f"D) It's too complex to understand"
+            correct_answer_text = "It involves calculations and formulas"
+            wrong_options = [
+                "It's only theoretical",
+                "It has no practical use",
+                "It's too complex to understand"
             ]
-            correct_answer = "A) It involves calculations and formulas"
         elif subject == "Science":
-            options = [
-                f"A) It's a natural phenomenon or concept",
-                f"B) It's just a theory",
-                f"C) It doesn't affect us",
-                f"D) It's not important"
+            correct_answer_text = "It's a natural phenomenon or concept"
+            wrong_options = [
+                "It's just a theory",
+                "It doesn't affect us",
+                "It's not important"
             ]
-            correct_answer = "A) It's a natural phenomenon or concept"
         elif subject == "Environmental Studies":
-            options = [
-                f"A) It helps us understand nature better",
-                f"B) It's not relevant today",
-                f"C) It only affects animals",
-                f"D) It's too complicated"
+            correct_answer_text = "It helps us understand nature better"
+            wrong_options = [
+                "It's not relevant today",
+                "It only affects animals",
+                "It's too complicated"
             ]
-            correct_answer = "A) It helps us understand nature better"
         else:
-            options = [
-                f"A) It's an important concept to understand",
-                f"B) It's not necessary to learn",
-                f"C) It's too difficult",
-                f"D) It has no meaning"
+            correct_answer_text = "It's an important concept to understand"
+            wrong_options = [
+                "It's not necessary to learn",
+                "It's too difficult",
+                "It has no meaning"
             ]
-            correct_answer = "A) It's an important concept to understand"
+        
+        # Randomize the answer options
+        randomized = self._randomize_answer_options(correct_answer_text, wrong_options)
         
         return {
             "question": question_text,
-            "options": options,
-            "correct_answer": correct_answer,
+            "options": randomized['options'],
+            "correct_answer": randomized['correct_answer'],
             "explanation": f"Understanding {topic} is fundamental to learning {subject} at the {class_level} level.",
             "concept_focus": f"Understanding of {topic}",
             "difficulty": difficulty
@@ -397,24 +476,24 @@ class QuizGenerator:
             "Mathematics": [
                 {
                     "question": f"What is the main concept in {topic}?",
-                    "options": ["A) Addition", "B) Subtraction", "C) Multiplication", "D) Division"],
-                    "correct_answer": "A) Addition",
+                    "correct_answer_text": "Addition",
+                    "wrong_options": ["Subtraction", "Multiplication", "Division"],
                     "explanation": "This is a basic concept question."
                 }
             ],
             "Science": [
                 {
                     "question": f"Which of the following is related to {topic}?",
-                    "options": ["A) Plants", "B) Animals", "C) Water", "D) Air"],
-                    "correct_answer": "A) Plants",
+                    "correct_answer_text": "Plants",
+                    "wrong_options": ["Animals", "Water", "Air"],
                     "explanation": "This relates to the topic being studied."
                 }
             ],
             "Environmental Studies": [
                 {
                     "question": f"What can we learn from {topic}?",
-                    "options": ["A) Conservation", "B) Pollution", "C) Resources", "D) All of the above"],
-                    "correct_answer": "D) All of the above",
+                    "correct_answer_text": "All of the above",
+                    "wrong_options": ["Conservation", "Pollution", "Resources"],
                     "explanation": "Environmental studies covers many interconnected topics."
                 }
             ]
@@ -425,15 +504,20 @@ class QuizGenerator:
         base_template = templates.get(subject, templates["Science"])
         
         for i in range(num_questions):
+            # Create randomized options for each question
+            correct_answer_text = f"Concept {i+1}"
+            wrong_options = [
+                f"Concept {i+2}",
+                f"Concept {i+3}",
+                f"All of the above"
+            ]
+            
+            randomized = self._randomize_answer_options(correct_answer_text, wrong_options)
+            
             question = {
                 "question": f"Question {i+1}: What is an important aspect of {topic}?",
-                "options": [
-                    f"A) Concept {i+1}",
-                    f"B) Concept {i+2}",
-                    f"C) Concept {i+3}",
-                    f"D) All of the above"
-                ],
-                "correct_answer": f"A) Concept {i+1}",
+                "options": randomized['options'],
+                "correct_answer": randomized['correct_answer'],
                 "explanation": f"This is related to understanding {topic}.",
                 "difficulty": difficulty
             }
