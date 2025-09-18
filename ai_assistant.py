@@ -770,3 +770,248 @@ class AIAssistant:
             
         else:
             return f"Here's the complete solution: The correct answer is {correct_answer}. {explanation if explanation else 'This relates to the key concepts of ' + topic + '.'} Now you can see how to approach similar questions! 🌟"
+    
+    def generate_comprehensive_feedback(self, student_data: Dict[str, Any]) -> str:
+        """Generate comprehensive AI-powered feedback based on student learning patterns and mistakes"""
+        
+        # Extract data from session
+        quiz_attempts = student_data.get('quiz_attempts', [])
+        topics_studied = student_data.get('topics_studied', [])
+        chat_interactions = student_data.get('chat_interactions', [])
+        video_views = student_data.get('video_views', [])
+        continuous_quiz_stats = student_data.get('continuous_quiz_stats', {})
+        final_quiz_results = student_data.get('final_quiz_results', [])
+        writing_quiz_evaluations = student_data.get('writing_quiz_evaluations', [])
+        student_name = student_data.get('student_name', 'Student')
+        current_topic = student_data.get('current_topic', 'General Learning')
+        current_subject = student_data.get('current_subject', 'General')
+        class_level = student_data.get('class_level', 'Class')
+        
+        # Calculate learning metrics
+        total_study_time = len(topics_studied) * 15  # Assume 15 min per topic
+        total_quizzes = len(quiz_attempts)
+        avg_quiz_score = sum(q.get('score', 0) for q in quiz_attempts) / max(total_quizzes, 1)
+        total_chat_questions = len(chat_interactions)
+        videos_watched = len(video_views)
+        
+        # Analyze quiz performance patterns
+        if quiz_attempts:
+            recent_scores = [q.get('score', 0) for q in quiz_attempts[-5:]]
+            early_scores = [q.get('score', 0) for q in quiz_attempts[:5]] if len(quiz_attempts) > 5 else []
+            improvement_trend = "stable"
+            if early_scores and recent_scores:
+                early_avg = sum(early_scores) / len(early_scores)
+                recent_avg = sum(recent_scores) / len(recent_scores)
+                if recent_avg > early_avg + 10:
+                    improvement_trend = "improving"
+                elif recent_avg < early_avg - 10:
+                    improvement_trend = "declining"
+        else:
+            improvement_trend = "no_data"
+        
+        # Analyze mistake patterns from continuous quiz
+        mistake_patterns = []
+        if continuous_quiz_stats:
+            consecutive_wrong = continuous_quiz_stats.get('consecutive_wrong', 0)
+            last_wrong_concept = continuous_quiz_stats.get('last_wrong_concept', '')
+            total_questions = continuous_quiz_stats.get('total_questions', 0)
+            correct_answers = continuous_quiz_stats.get('correct_answers', 0)
+            
+            if consecutive_wrong > 0:
+                mistake_patterns.append(f"Recent difficulty with {last_wrong_concept}")
+            if total_questions > 0:
+                accuracy = (correct_answers / total_questions) * 100
+                if accuracy < 60:
+                    mistake_patterns.append("Low quiz accuracy")
+                elif accuracy > 80:
+                    mistake_patterns.append("High quiz accuracy")
+        
+        # Analyze subject-wise performance
+        subject_performance = {}
+        for quiz in quiz_attempts:
+            topic = quiz.get('topic', 'Unknown')
+            score = quiz.get('score', 0)
+            if topic not in subject_performance:
+                subject_performance[topic] = []
+            subject_performance[topic].append(score)
+        
+        # Find strongest and weakest topics
+        topic_averages = {topic: sum(scores)/len(scores) for topic, scores in subject_performance.items() if scores}
+        strongest_topics = sorted(topic_averages.items(), key=lambda x: x[1], reverse=True)[:3]
+        weakest_topics = sorted(topic_averages.items(), key=lambda x: x[1])[:3]
+        
+        # Analyze learning behavior patterns
+        learning_patterns = []
+        if total_chat_questions > 10:
+            learning_patterns.append("High engagement with AI assistant")
+        elif total_chat_questions < 3:
+            learning_patterns.append("Limited use of interactive help")
+        
+        if videos_watched > 5:
+            learning_patterns.append("Active video learner")
+        elif videos_watched < 2:
+            learning_patterns.append("Prefers text-based learning")
+        
+        if total_quizzes > 8:
+            learning_patterns.append("Quiz-focused learner")
+        
+        # Analyze study consistency
+        if topics_studied:
+            study_dates = [t.get('date', '') for t in topics_studied if t.get('date')]
+            unique_dates = len(set(study_dates))
+            if unique_dates > 5:
+                learning_patterns.append("Consistent daily study habit")
+            elif unique_dates < 3:
+                learning_patterns.append("Irregular study pattern")
+        
+        system_prompt = f"""
+        You are an experienced educational counselor and learning analytics expert specializing in AP State Board curriculum.
+        Analyze the provided student learning data and generate comprehensive, realistic feedback that:
+        
+        1. ACKNOWLEDGES the student's specific achievements and efforts
+        2. IDENTIFIES genuine patterns in their learning behavior and mistakes
+        3. PROVIDES actionable, personalized recommendations
+        4. MOTIVATES the student while being honest about areas needing improvement
+        5. CONNECTS feedback to AP State Board learning objectives for {class_level}
+        
+        TONE AND STYLE:
+        - Warm, encouraging, and supportive
+        - Professional yet friendly
+        - Specific and data-driven, not generic
+        - Realistic and honest
+        - Age-appropriate for {class_level} students
+        
+        FEEDBACK STRUCTURE:
+        Use emojis and clear sections for better readability:
+        1. 🎯 **Learning Overview & Achievements**
+        2. 📊 **Performance Analysis** 
+        3. 🔍 **Areas for Growth**
+        4. 💡 **Personalized Recommendations**
+        5. 🚀 **Next Steps & Goals**
+        6. 🌟 **Motivational Message**
+        """
+        
+        human_prompt = f"""
+        Generate comprehensive feedback for {student_name}, a {class_level} student studying {current_subject}.
+        
+        📚 LEARNING ACTIVITY DATA:
+        - Current Topic: {current_topic}
+        - Topics Studied: {len(topics_studied)} topics
+        - Total Study Time: ~{total_study_time} minutes
+        - Quizzes Taken: {total_quizzes}
+        - Average Quiz Score: {avg_quiz_score:.1f}%
+        - Chat Questions Asked: {total_chat_questions}
+        - Videos Watched: {videos_watched}
+        
+        📈 PERFORMANCE TRENDS:
+        - Learning Trend: {improvement_trend}
+        - Quiz Accuracy: {continuous_quiz_stats.get('correct_answers', 0)}/{continuous_quiz_stats.get('total_questions', 0)} correct
+        - Recent Mistakes: {mistake_patterns if mistake_patterns else ['No significant patterns detected']}
+        
+        🏆 STRONGEST TOPICS:
+        {chr(10).join([f"- {topic}: {score:.1f}% average" for topic, score in strongest_topics]) if strongest_topics else "- Still building expertise"}
+        
+        📚 TOPICS NEEDING ATTENTION:
+        {chr(10).join([f"- {topic}: {score:.1f}% average" for topic, score in weakest_topics]) if weakest_topics else "- Maintaining consistent performance"}
+        
+        🎯 LEARNING BEHAVIOR PATTERNS:
+        {chr(10).join([f"- {pattern}" for pattern in learning_patterns]) if learning_patterns else "- Developing learning routine"}
+        
+        📝 WRITING QUIZ PERFORMANCE:
+        - Writing Evaluations: {len(writing_quiz_evaluations)} completed
+        
+        💭 INTERACTION STYLE:
+        - Questions Asked: {total_chat_questions} (Shows curiosity level)
+        - Help-Seeking: {'Active' if total_chat_questions > 5 else 'Moderate' if total_chat_questions > 2 else 'Limited'}
+        
+        REQUIREMENTS:
+        1. Be SPECIFIC to this student's actual data - don't use generic statements
+        2. Reference the actual numbers and patterns shown above
+        3. Provide realistic, achievable goals based on current performance
+        4. Include specific study strategies for {current_subject} and {current_topic}
+        5. Address any concerning patterns (like declining scores or low engagement)
+        6. Celebrate genuine achievements and progress
+        7. Give practical next steps they can implement immediately
+        8. Connect recommendations to AP State Board learning standards
+        9. Be encouraging but honest about areas needing work
+        10. Make the feedback feel personal and meaningful to {student_name}
+        
+        Make this feedback feel like it comes from an experienced teacher who truly understands this student's learning journey.
+        """
+        
+        try:
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=human_prompt)
+            ]
+            
+            response = self.llm.invoke(messages)
+            return response.content
+            
+        except Exception as e:
+            # Provide a fallback feedback based on available data
+            return self._generate_fallback_feedback(student_data, student_name, total_quizzes, avg_quiz_score, 
+                                                  total_chat_questions, videos_watched, improvement_trend)
+    
+    def _generate_fallback_feedback(self, student_data: Dict, student_name: str, total_quizzes: int, 
+                                  avg_quiz_score: float, total_chat_questions: int, videos_watched: int, 
+                                  improvement_trend: str) -> str:
+        """Generate fallback feedback when AI is unavailable"""
+        
+        feedback = f"# 📊 Learning Progress Report for {student_name}\n\n"
+        
+        # Learning Overview
+        feedback += "## 🎯 **Learning Overview & Achievements**\n"
+        feedback += f"Great work, {student_name}! You've been actively engaged in your learning journey. "
+        
+        if total_quizzes > 5:
+            feedback += f"You've completed {total_quizzes} quizzes, showing dedication to testing your knowledge. "
+        if videos_watched > 3:
+            feedback += f"You've watched {videos_watched} educational videos, demonstrating varied learning approaches. "
+        if total_chat_questions > 5:
+            feedback += f"You've asked {total_chat_questions} questions, showing curiosity and engagement. "
+        
+        feedback += "\n\n"
+        
+        # Performance Analysis
+        feedback += "## 📊 **Performance Analysis**\n"
+        if avg_quiz_score > 75:
+            feedback += f"🌟 Excellent! Your average quiz score of {avg_quiz_score:.1f}% shows strong understanding. "
+        elif avg_quiz_score > 60:
+            feedback += f"👍 Good progress! Your average quiz score of {avg_quiz_score:.1f}% shows you're on the right track. "
+        else:
+            feedback += f"📚 Your average quiz score of {avg_quiz_score:.1f}% indicates opportunities for improvement. "
+        
+        if improvement_trend == "improving":
+            feedback += "📈 Your scores show an upward trend - keep up the excellent work!\n"
+        elif improvement_trend == "declining":
+            feedback += "📉 Your recent scores suggest you might need to review some concepts.\n"
+        else:
+            feedback += "📊 Your performance has been consistent.\n"
+        
+        feedback += "\n"
+        
+        # Areas for Growth
+        feedback += "## 🔍 **Areas for Growth**\n"
+        if avg_quiz_score < 70:
+            feedback += "• Focus on understanding core concepts before moving to advanced topics\n"
+            feedback += "• Take more time to review explanations after each quiz\n"
+        if total_chat_questions < 3:
+            feedback += "• Don't hesitate to ask more questions when you're unsure\n"
+        if videos_watched < 2:
+            feedback += "• Try incorporating video learning for better understanding\n"
+        
+        feedback += "\n"
+        
+        # Recommendations
+        feedback += "## 💡 **Personalized Recommendations**\n"
+        feedback += "• Create a regular study schedule with daily practice\n"
+        feedback += "• Use the interactive Q&A feature more frequently\n"
+        feedback += "• Review topics where you scored below 70%\n"
+        feedback += "• Try different learning methods (videos, explanations, quizzes)\n\n"
+        
+        # Motivational message
+        feedback += "## 🌟 **Keep Going!**\n"
+        feedback += f"Remember, {student_name}, learning is a journey, not a destination. Every question you ask and every quiz you take brings you closer to mastery. Stay curious, stay committed, and celebrate your progress along the way! 🚀"
+        
+        return feedback
