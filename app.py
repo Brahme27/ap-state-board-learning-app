@@ -11,6 +11,13 @@ from datetime import datetime
 from typing import Dict, List, Any
 import random
 
+# Import visualization library
+try:
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
 # Import custom modules
 from curriculum_data import get_curriculum_data
 from ai_assistant import AIAssistant
@@ -2511,7 +2518,83 @@ def progress_section():
         else:
             st.metric("Average Score", "N/A")
     
+    # AI-Powered Personalized Feedback Section
+    st.markdown("---")
+    st.markdown("### 🤖 **AI-Powered Learning Insights & Feedback**")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.markdown("""
+        Get personalized feedback based on your learning patterns, mistakes, and progress. 
+        Our AI analyzes your interactions, quiz performance, and study habits to provide tailored insights and recommendations.
+        """)
+    
+    with col2:
+        generate_feedback = st.button("🧠 Generate AI Feedback", type="primary", use_container_width=True, key="generate_ai_feedback")
+    
+    # Display feedback outside of columns for better readability
+    if generate_feedback:
+        # Prepare comprehensive student data for analysis
+        student_data = {
+            'student_name': st.session_state.student_name,
+            'class_level': st.session_state.get('selected_class', 'Unknown'),
+            'current_subject': st.session_state.get('selected_subject', 'General'),
+            'current_topic': st.session_state.get('selected_topic', 'General Learning'),
+            'quiz_attempts': history.quiz_attempts,
+            'topics_studied': history.topics_studied,
+            'chat_interactions': history.chat_interactions,
+            'video_views': history.video_views,
+            'continuous_quiz_stats': st.session_state.get('continuous_quiz_stats', {}),
+            'final_quiz_results': getattr(history, 'final_quiz_results', []),
+            'writing_quiz_evaluations': st.session_state.get('writing_quiz_evaluations', [])
+        }
+        
+        with st.spinner("🧠 Analyzing your learning patterns and generating personalized feedback..."):
+            try:
+                # Generate AI-powered feedback
+                ai_assistant = AIAssistant(st.session_state.api_key)
+                feedback = ai_assistant.generate_comprehensive_feedback(student_data)
+                
+                # Display the feedback in an attractive format with full width
+                st.markdown("---")
+                st.markdown("## 📋 **Your Personalized Learning Report**")
+                st.markdown(feedback)
+                
+                # Add timestamp
+                st.caption(f"📅 Report generated on: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
+                
+            except Exception as e:
+                st.error(f"❌ Error generating feedback: {str(e)}")
+                
+                # Provide basic fallback feedback
+                st.markdown("---")
+                st.markdown("## 📋 **Basic Learning Summary**")
+                
+                if quizzes_taken > 0:
+                    if avg_score > 75:
+                        st.success(f"🌟 Excellent work, {st.session_state.student_name}! Your average score of {avg_score:.1f}% shows strong understanding.")
+                    elif avg_score > 60:
+                        st.info(f"👍 Good progress, {st.session_state.student_name}! Your average score of {avg_score:.1f}% shows you're learning well.")
+                    else:
+                        st.warning(f"📚 Keep practicing, {st.session_state.student_name}! Your average score of {avg_score:.1f}% suggests reviewing key concepts would help.")
+                
+                st.markdown(f"""
+                **📊 Your Learning Stats:**
+                - Topics Explored: {topics_studied}
+                - Quizzes Completed: {quizzes_taken}
+                - Videos Watched: {videos_watched}
+                - Questions Asked: {len(history.chat_interactions)}
+                
+                **💡 Quick Recommendations:**
+                - Continue taking quizzes to test your knowledge
+                - Use the interactive Q&A feature when you have questions
+                - Watch educational videos for better understanding
+                - Review topics where you scored below 70%
+                """)
+    
     # Recent activity
+    st.markdown("---")
     st.markdown("### 🕒 **Recent Activity**")
     
     if history.topics_studied:
@@ -2525,6 +2608,130 @@ def progress_section():
         for quiz_data in history.quiz_attempts[-5:]:  # Last 5 quizzes
             timestamp = quiz_data['timestamp'].strftime("%Y-%m-%d %H:%M")
             st.markdown(f"• {quiz_data['topic']} - {quiz_data['score']:.1f}% - {timestamp}")
+    
+    # Detailed Performance Analytics
+    st.markdown("---")
+    st.markdown("### 📈 **Detailed Performance Analytics**")
+    
+    if history.quiz_attempts:
+        # Performance over time chart
+        quiz_dates = [q['timestamp'].strftime('%m/%d') for q in history.quiz_attempts[-10:]]
+        quiz_scores = [q['score'] for q in history.quiz_attempts[-10:]]
+        
+        if len(quiz_scores) > 1:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if PLOTLY_AVAILABLE:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=quiz_dates,
+                        y=quiz_scores,
+                        mode='lines+markers',
+                        name='Quiz Scores',
+                        line=dict(color='#ff6b6b', width=3),
+                        marker=dict(size=8)
+                    ))
+                    fig.update_layout(
+                        title="📊 Recent Quiz Performance Trend",
+                        xaxis_title="Date",
+                        yaxis_title="Score (%)",
+                        yaxis=dict(range=[0, 100]),
+                        height=400
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    # Fallback visualization using Streamlit's built-in chart
+                    import pandas as pd
+                    chart_data = pd.DataFrame({
+                        'Date': quiz_dates,
+                        'Score': quiz_scores
+                    })
+                    st.line_chart(chart_data.set_index('Date'))
+                    st.caption("📊 Recent Quiz Performance Trend")
+            
+            with col2:
+                # Subject-wise performance
+                subject_performance = {}
+                for quiz in history.quiz_attempts:
+                    topic = quiz.get('topic', 'Unknown')
+                    score = quiz.get('score', 0)
+                    if topic not in subject_performance:
+                        subject_performance[topic] = []
+                    subject_performance[topic].append(score)
+                
+                if subject_performance:
+                    avg_by_topic = {topic: sum(scores)/len(scores) for topic, scores in subject_performance.items()}
+                    
+                    if PLOTLY_AVAILABLE:
+                        fig2 = go.Figure(data=[
+                            go.Bar(
+                                x=list(avg_by_topic.keys()),
+                                y=list(avg_by_topic.values()),
+                                marker_color=['#ff6b6b' if score < 60 else '#4ecdc4' if score < 80 else '#95e1d3' for score in avg_by_topic.values()]
+                            )
+                        ])
+                        fig2.update_layout(
+                            title="📋 Performance by Topic",
+                            xaxis_title="Topics",
+                            yaxis_title="Average Score (%)",
+                            yaxis=dict(range=[0, 100]),
+                            height=400
+                        )
+                        st.plotly_chart(fig2, use_container_width=True)
+                    else:
+                        # Fallback visualization using Streamlit's built-in chart
+                        import pandas as pd
+                        chart_data = pd.DataFrame({
+                            'Topic': list(avg_by_topic.keys()),
+                            'Average Score': list(avg_by_topic.values())
+                        })
+                        st.bar_chart(chart_data.set_index('Topic'))
+                        st.caption("📋 Performance by Topic")
+        
+        # Learning insights
+        st.markdown("#### 🎯 **Quick Learning Insights**")
+        
+        recent_scores = [q['score'] for q in history.quiz_attempts[-5:]]
+        early_scores = [q['score'] for q in history.quiz_attempts[:5]] if len(history.quiz_attempts) > 5 else []
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if recent_scores:
+                recent_avg = sum(recent_scores) / len(recent_scores)
+                if recent_avg > 80:
+                    st.success(f"🌟 **Recent Performance**\nExcellent! {recent_avg:.1f}% average")
+                elif recent_avg > 60:
+                    st.info(f"👍 **Recent Performance**\nGood progress! {recent_avg:.1f}% average")
+                else:
+                    st.warning(f"📚 **Recent Performance**\nKeep practicing! {recent_avg:.1f}% average")
+        
+        with col2:
+            if early_scores and recent_scores:
+                early_avg = sum(early_scores) / len(early_scores)
+                recent_avg = sum(recent_scores) / len(recent_scores)
+                improvement = recent_avg - early_avg
+                
+                if improvement > 10:
+                    st.success(f"📈 **Improvement**\nGreat progress! +{improvement:.1f}%")
+                elif improvement > 0:
+                    st.info(f"📊 **Improvement**\nSteady growth! +{improvement:.1f}%")
+                else:
+                    st.warning(f"📉 **Improvement**\nNeed focus! {improvement:.1f}%")
+        
+        with col3:
+            total_questions = sum(q.get('total_questions', 0) for q in history.quiz_attempts)
+            total_correct = sum(q.get('correct_answers', 0) for q in history.quiz_attempts)
+            
+            if total_questions > 0:
+                accuracy = (total_correct / total_questions) * 100
+                if accuracy > 75:
+                    st.success(f"🎯 **Overall Accuracy**\nExcellent! {accuracy:.1f}%")
+                elif accuracy > 60:
+                    st.info(f"🎯 **Overall Accuracy**\nGood! {accuracy:.1f}%")
+                else:
+                    st.warning(f"🎯 **Overall Accuracy**\nImproving! {accuracy:.1f}%")
     
     # Export data buttons
     st.markdown("---")
