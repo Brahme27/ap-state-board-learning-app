@@ -108,30 +108,50 @@ class ExamAssistant:
         
         # Question generation prompt template
         self.question_prompt = PromptTemplate(
-            input_variables=["topic", "marks"],
+            input_variables=["topic", "marks", "variation_seed"],
             template="""
-            Generate a clear, exam-style question on the topic "{topic}" worth exactly {marks} marks.
+            Generate a UNIQUE, creative, exam-style question on the topic "{topic}" worth exactly {marks} marks.
+            
+            VARIATION REQUIREMENT: Create a DIFFERENT question each time, even for the same topic and marks.
+            Use the variation seed {variation_seed} to ensure uniqueness.
             
             CRITICAL: The question MUST match the exact mark allocation specified:
             
-            - For 2 marks: Simple definition, identification, or basic concept questions (1-2 sentences)
-              Example: "Define {topic}." or "What is {topic}?"
+            - For 2 marks: Choose from these varied approaches:
+              * Definition: "Define {topic}." / "What is meant by {topic}?"
+              * Identification: "Identify the main features of {topic}." / "List two key characteristics of {topic}."
+              * Basic explanation: "Briefly explain {topic}." / "State the significance of {topic}."
+              * Classification: "Classify {topic} and give reasons." / "Categorize the types of {topic}."
             
-            - For 4 marks: Explanation, comparison, or application questions requiring moderate detail (2-3 sentences)
-              Example: "Explain the concept of {topic} with suitable examples."
+            - For 4 marks: Choose from these varied approaches:
+              * Explanation with examples: "Explain {topic} with suitable examples."
+              * Comparison: "Compare and contrast different aspects of {topic}."
+              * Application: "How is {topic} applied in real-life situations? Explain."
+              * Process description: "Describe the process/mechanism of {topic}."
+              * Cause and effect: "Explain the causes and effects related to {topic}."
+              * Problem-solving: "Solve a problem related to {topic} step by step."
             
-            - For 8 marks: COMPREHENSIVE, DETAILED questions requiring extensive analysis (MUST be complex enough to justify 8 marks)
-              Requirements for 8-mark questions:
-              * Must require detailed explanation AND analysis AND evaluation
-              * Should ask for multiple aspects: features, significance, applications, examples, advantages/disadvantages
-              * Must demand critical thinking and in-depth discussion
-              * Should require at least 2-3 paragraphs of detailed writing
-              * Use words like: "Analyze", "Evaluate", "Discuss in detail", "Critically examine", "Compare and contrast comprehensively"
+            - For 8 marks: Choose from these comprehensive approaches:
+              * Deep analysis: "Analyze the concept of {topic} in detail. Discuss its key features, significance, and real-world applications. Evaluate its advantages and disadvantages with suitable examples."
+              * Critical examination: "Critically examine {topic}. Explain its fundamental principles, analyze its importance, and discuss its various applications with detailed examples."
+              * Comprehensive discussion: "Discuss {topic} comprehensively. Analyze its key components, evaluate its significance, and examine its practical applications in different scenarios."
+              * Multi-perspective analysis: "Evaluate {topic} from multiple perspectives. Analyze its theoretical framework, practical implications, and societal impact. Discuss its advantages, limitations, and future prospects."
+              * Case study approach: "Using {topic} as a case study, analyze its development, current status, and future potential. Discuss the challenges and opportunities associated with it."
+              * Research-based question: "Investigate the role of {topic} in modern society. Analyze its evolution, current applications, and predict its future developments with supporting evidence."
             
-            EXAMPLES of proper 8-mark questions:
-            - "Analyze the concept of {topic} in detail. Discuss its key features, significance, and real-world applications. Evaluate its advantages and disadvantages with suitable examples."
-            - "Critically examine {topic}. Explain its fundamental principles, analyze its importance, and discuss its various applications with detailed examples."
-            - "Discuss {topic} comprehensively. Analyze its key components, evaluate its significance, and examine its practical applications in different scenarios."
+            QUESTION VARIATION STRATEGIES:
+            1. Use different command words: Define, Explain, Analyze, Evaluate, Discuss, Compare, Contrast, Examine, Investigate, Assess, Justify, Describe, Illustrate
+            2. Vary the focus: theoretical aspects, practical applications, historical development, future prospects, societal impact, advantages/disadvantages
+            3. Change question structure: direct questions, problem-solving scenarios, case studies, comparative analyses
+            4. Include different contexts: real-world applications, historical examples, current events, future predictions
+            5. Vary the perspective: student view, teacher view, researcher view, societal view, global view
+            
+            RANDOMIZATION ELEMENTS:
+            - Mix different question formats within the same mark range
+            - Use varied vocabulary and phrasing
+            - Include different aspects of the topic each time
+            - Change the emphasis and focus areas
+            - Incorporate current and relevant contexts
             
             IMPORTANT for 8-mark questions:
             - Must use multiple command words (analyze, discuss, evaluate, examine, etc.)
@@ -139,7 +159,7 @@ class ExamAssistant:
             - Must be comprehensive enough to require extensive writing
             - Should cover multiple aspects of the topic
             
-            Generate ONLY the question text that exactly matches the {marks} mark requirement. No additional text.
+            Generate ONLY the question text that exactly matches the {marks} mark requirement. Ensure the question is DIFFERENT from typical textbook questions. No additional text.
             """
         )
         
@@ -184,20 +204,47 @@ class ExamAssistant:
     def generate_question(self, topic, marks):
         """Generate an exam question based on topic and marks"""
         try:
-            prompt = self.question_prompt.format(topic=topic, marks=marks)
+            # Import random and datetime for variation
+            import random
+            from datetime import datetime
+            
+            # Create a variation seed based on current time and random elements
+            current_time = datetime.now()
+            random_elements = [
+                random.randint(1, 1000),
+                random.choice(['creative', 'analytical', 'practical', 'theoretical', 'innovative']),
+                random.choice(['detailed', 'comprehensive', 'focused', 'broad', 'specific']),
+                current_time.strftime("%H%M%S")
+            ]
+            variation_seed = f"{'-'.join(map(str, random_elements))}"
+            
+            # Format prompt with variation seed
+            prompt = self.question_prompt.format(
+                topic=topic, 
+                marks=marks, 
+                variation_seed=variation_seed
+            )
             
             # Adjust max_tokens based on mark allocation
             # Higher mark questions need more detailed prompts and responses
             if marks >= 8:
-                max_tokens = 800
+                max_tokens = 1000
             elif marks >= 4:
-                max_tokens = 600
+                max_tokens = 700
             else:
-                max_tokens = 400
+                max_tokens = 500
+            
+            # Increase temperature for more creative and varied responses
+            temperature = 0.9  # Higher temperature for more variation
             
             if OPENAI_V1:
-                # Enhanced system message for better question generation
-                system_message = "You are an experienced educator creating exam questions. For 8-mark questions, you must create comprehensive questions that require detailed analysis, evaluation, and discussion. 8-mark questions should be significantly more complex and detailed than 2-mark or 4-mark questions."
+                # Enhanced system message for better question generation with variation emphasis
+                system_message = """You are an experienced educator creating diverse exam questions. 
+                CRITICAL: Generate UNIQUE, VARIED questions every time, even for the same topic and marks.
+                Use creative approaches, different question styles, and varied vocabulary.
+                For 8-mark questions, create comprehensive questions requiring detailed analysis and evaluation.
+                Avoid repetitive patterns and ensure each question feels fresh and engaging.
+                Consider different perspectives, contexts, and applications of the topic."""
                 
                 response = self.client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -205,13 +252,18 @@ class ExamAssistant:
                         {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.7,
+                    temperature=temperature,
                     max_tokens=max_tokens
                 )
                 question = response.choices[0].message.content.strip()
             else:
-                # Enhanced system message for better question generation
-                system_message = "You are an experienced educator creating exam questions. For 8-mark questions, you must create comprehensive questions that require detailed analysis, evaluation, and discussion. 8-mark questions should be significantly more complex and detailed than 2-mark or 4-mark questions."
+                # Enhanced system message for better question generation with variation emphasis
+                system_message = """You are an experienced educator creating diverse exam questions. 
+                CRITICAL: Generate UNIQUE, VARIED questions every time, even for the same topic and marks.
+                Use creative approaches, different question styles, and varied vocabulary.
+                For 8-mark questions, create comprehensive questions requiring detailed analysis and evaluation.
+                Avoid repetitive patterns and ensure each question feels fresh and engaging.
+                Consider different perspectives, contexts, and applications of the topic."""
                 
                 response = openai.ChatCompletion.create(
                     model="gpt-4o-mini",  # Fallback to gpt-4o-mini for older versions
@@ -219,21 +271,16 @@ class ExamAssistant:
                         {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.7,
+                    temperature=temperature,
                     max_tokens=max_tokens
                 )
                 question = response['choices'][0]['message']['content'].strip()
             
             # Additional validation for the generated question
             if not question or len(question.strip()) < 10:
-                # Fallback: Generate a comprehensive question if AI fails
-                if marks == 8:
-                    question = f"Analyze the concept of {topic} in detail. Discuss its key features, significance, and practical applications. Evaluate its advantages and disadvantages with suitable examples. Examine its impact and importance in real-world scenarios. (8 marks)"
-                elif marks == 4:
-                    question = f"Explain {topic} with suitable examples. (4 marks)"
-                else:
-                    question = f"Define {topic}. (2 marks)"
-                    
+                # Enhanced fallback with variation
+                fallback_options = self._get_fallback_questions(topic, marks)
+                question = random.choice(fallback_options)
                 st.warning(f"⚠️ Using fallback question for {marks} marks due to API response issue.")
             
             # Additional validation specifically for 8-mark questions
@@ -248,33 +295,65 @@ class ExamAssistant:
                 is_long_enough = len(question.split()) >= 15  # At least 15 words for 8 marks
                 
                 if not (has_comprehensive_words and has_multiple_aspects and is_long_enough):
-                    # Replace with a proper 8-mark question
-                    question = f"Critically analyze the concept of {topic}. Discuss its fundamental principles, evaluate its significance and applications, and examine its advantages and disadvantages with detailed examples. (8 marks)"
+                    # Use enhanced fallback for 8-mark questions with variation
+                    enhanced_8mark_options = self._get_enhanced_8mark_questions(topic)
+                    question = random.choice(enhanced_8mark_options)
                     st.info(f"🔄 Enhanced question complexity for 8 marks requirement.")
             
-            # Store in conversation history
+            # Store in conversation history with timestamp for tracking
             self.conversation_history.append({
-                "input": f"Generate question for {topic} ({marks} marks)",
-                "output": question
+                "input": f"Generate question for {topic} ({marks} marks) - {variation_seed}",
+                "output": question,
+                "timestamp": current_time.isoformat()
             })
             
             return question
             
         except Exception as e:
-            # Enhanced error reporting with fallback
+            # Enhanced error reporting with varied fallback
             error_msg = f"Error generating {marks}-mark question for '{topic}': {str(e)}"
             st.error(error_msg)
             
-            # Provide fallback question even on complete failure
-            if marks == 8:
-                fallback_question = f"Analyze and evaluate the concept of {topic} comprehensively. Discuss its key principles, significance, and practical applications in detail. Examine its advantages and disadvantages with suitable examples. Critically assess its importance in real-world scenarios. (8 marks)"
-            elif marks == 4:
-                fallback_question = f"Explain the concept of {topic} and provide relevant examples. (4 marks)"
-            else:
-                fallback_question = f"Define {topic}. (2 marks)"
+            # Provide varied fallback questions even on complete failure
+            fallback_options = self._get_fallback_questions(topic, marks)
+            fallback_question = random.choice(fallback_options)
                 
             st.info(f"🔄 Using fallback question: {fallback_question}")
             return fallback_question
+    
+    def _get_fallback_questions(self, topic, marks):
+        """Get varied fallback questions based on marks"""
+        if marks == 8:
+            return self._get_enhanced_8mark_questions(topic)
+        elif marks == 4:
+            return [
+                f"Explain the concept of {topic} and provide relevant examples. (4 marks)",
+                f"Describe {topic} in detail with suitable illustrations. (4 marks)",
+                f"How does {topic} work? Explain with examples. (4 marks)",
+                f"Compare and contrast the key aspects of {topic}. (4 marks)",
+                f"Analyze the importance of {topic} in practical applications. (4 marks)",
+                f"Discuss the role and significance of {topic}. (4 marks)"
+            ]
+        else:  # 2 marks
+            return [
+                f"Define {topic}. (2 marks)",
+                f"What is meant by {topic}? (2 marks)",
+                f"State the significance of {topic}. (2 marks)",
+                f"List the main features of {topic}. (2 marks)",
+                f"Identify the key characteristics of {topic}. (2 marks)",
+                f"Briefly explain {topic}. (2 marks)"
+            ]
+    
+    def _get_enhanced_8mark_questions(self, topic):
+        """Get varied 8-mark questions with different approaches"""
+        return [
+            f"Analyze and evaluate the concept of {topic} comprehensively. Discuss its key principles, significance, and practical applications in detail. Examine its advantages and disadvantages with suitable examples. Critically assess its importance in real-world scenarios. (8 marks)",
+            f"Critically examine {topic} from multiple perspectives. Explain its fundamental principles, analyze its importance in modern context, and discuss its various applications with detailed examples. Evaluate its impact on society and future prospects. (8 marks)",
+            f"Investigate the role of {topic} in contemporary society. Analyze its development, current applications, and potential future implications. Discuss the challenges and opportunities associated with it, supported by relevant examples. (8 marks)",
+            f"Evaluate {topic} as a comprehensive case study. Analyze its theoretical framework, practical implementation, and societal impact. Discuss its advantages, limitations, and scope for improvement with detailed justification. (8 marks)",
+            f"Discuss {topic} comprehensively from both theoretical and practical viewpoints. Analyze its key components, evaluate its significance in different contexts, and examine its applications across various fields with supporting examples. (8 marks)",
+            f"Critically analyze the evolution and current status of {topic}. Evaluate its historical development, present-day applications, and future potential. Discuss the factors influencing its effectiveness and suggest improvements. (8 marks)"
+        ]
     
     def encode_image(self, image):
         """Encode image to base64"""
